@@ -34,7 +34,11 @@ jobs:
 
       - run: npm run build
 
+      # enablement: true 면 저장소 Settings에서 손으로 Pages를 켤 필요 없이
+      # 첫 실행 때 워크플로가 직접 Pages를 활성화한다(build_type=workflow).
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - uses: actions/upload-pages-artifact@v3
         with:
