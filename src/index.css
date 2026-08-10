@@ -1,0 +1,809 @@
+:root {
+  --p1: #2563eb;
+  --p1-bg: #eff6ff;
+  --p2: #dc2626;
+  --p2-bg: #fef2f2;
+  --ink: #1e293b;
+  --muted: #64748b;
+  --border: #e2e8f0;
+  --panel-bg: #ffffff;
+  --page-bg: #f1f5f9;
+  --accent: #f59e0b;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--page-bg);
+  color: var(--ink);
+  font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Segoe UI', system-ui, sans-serif;
+}
+
+h1, h2, h3, h4 {
+  margin: 0 0 8px;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: var(--ink);
+}
+
+button:hover:not(:disabled) {
+  border-color: #94a3b8;
+  background: #f8fafc;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.btn-primary {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+  font-weight: 600;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #334155;
+  border-color: #334155;
+}
+
+select, input {
+  font: inherit;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.app-shell {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 16px 20px 48px;
+}
+
+.app-title {
+  font-size: 22px;
+  color: var(--ink);
+}
+
+/* ---------- Game screen layout ---------- */
+
+.game-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.top-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 16px;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06);
+}
+
+.main-layout {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.board-column {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* 보드가 세로로 길어져 max-height로 축소될 수 있다 —
+     열이 같이 줄어들면 보드가 폭에 눌려 작아지므로 축소 대상에서 뺀다. */
+  flex: 0 0 auto;
+}
+
+.board-svg {
+  border: 1px solid #94a3b8;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+  /* viewBox 덕에 가로세로 비율이 고정된다 — 화면(13×19=546×798px)을 넘칠 때만 비율 그대로 줄어든다. */
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: calc(100vh - 120px);
+}
+
+.board-cell.clickable:hover {
+  opacity: 0.85;
+}
+
+.board-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  background: #f8fafc;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+/* 보드 클릭 모드 토글 — 겹친 칸(이동이면서 공격 사거리인 칸)의 클릭 뜻을 정한다. */
+.click-mode-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.click-mode-label {
+  color: var(--muted);
+}
+
+.click-mode-btn {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.click-mode-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.click-mode-btn.move.active {
+  border-color: #16a34a;
+  background: #dcfce7;
+  color: #166534;
+  font-weight: 700;
+}
+
+.click-mode-btn.attack.active {
+  border-color: #ea580c;
+  background: #ffedd5;
+  color: #9a3412;
+  font-weight: 700;
+}
+
+.hud-column {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.action-panels {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+/* ---------- Scoreboard ---------- */
+
+.scoreboard {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 14px;
+}
+
+.scoreboard .turn {
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.scoreboard .score-p1 { color: var(--p1); font-weight: 700; }
+.scoreboard .score-p2 { color: var(--p2); font-weight: 700; }
+.scoreboard .win-score { color: var(--muted); }
+.scoreboard .winner { font-weight: 700; color: var(--accent); }
+
+/* ---------- Action panel / unit rows ---------- */
+
+.action-panel {
+  flex: 1;
+  min-width: 340px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.action-panel.owner-p1 { border-top: 3px solid var(--p1); }
+.action-panel.owner-p2 { border-top: 3px solid var(--p2); }
+
+.panel-title {
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.unit-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.unit-row {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.unit-row.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.unit-row.dead {
+  opacity: 0.55;
+}
+
+.unit-row-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #fff;
+  border: none;
+  border-radius: 0;
+  text-align: left;
+}
+
+.unit-row.selected .unit-row-header {
+  background: #fffbeb;
+}
+
+.unit-role-dot {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  border-radius: 2px;
+}
+
+.unit-role-dot.role-tank { background: #475569; border-radius: 2px; }
+.unit-role-dot.role-dealer { background: #475569; clip-path: polygon(50% 0%, 0% 100%, 100% 100%); }
+.unit-role-dot.role-support { background: #475569; border-radius: 50%; }
+
+.unit-name {
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.hp-bar {
+  width: 60px;
+  height: 6px;
+  background: #e2e8f0;
+  border-radius: 4px;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.hp-fill {
+  display: block;
+  height: 100%;
+}
+
+.hp-text {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+  color: #fff;
+}
+
+.badge-root { background: #dc2626; }
+.badge-barrier { background: #2563eb; }
+.badge-attackmode { background: #7c3aed; }
+.badge-shield { background: #0284c7; }
+/* 시간 역행 관련 표시는 보드의 경로/기준점 색(REWIND_COLOR)과 같은 보라색으로 통일한다. */
+.badge-rewind { background: #7c3aed; }
+
+.unit-action-chip {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--ink);
+  background: #f1f5f9;
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+.unit-action-chip.dead {
+  background: none;
+  color: var(--muted);
+  margin-left: auto;
+}
+
+.unit-row-editor {
+  padding: 10px 12px;
+  background: #f8fafc;
+  border-top: 1px solid var(--border);
+}
+
+.editor-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.editor-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.editor-label {
+  width: 40px;
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.editor-hint {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.distance-input {
+  width: 48px;
+}
+
+.btn-clear {
+  align-self: flex-start;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 4px 10px;
+}
+
+/* ---------- 스텝별 이동 경로 편집기 (1번 이동, 2번 이동 …) ---------- */
+
+.move-path-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.move-step-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+/* 기본 이동력을 넘어선 스텝 = 기술로 얻은 추가 이동 칸 */
+.move-step-row.extra {
+  background: #f5f3ff;
+  border-left: 3px solid #7c3aed;
+  padding-left: 5px;
+  margin-left: -8px;
+}
+
+/* 구간 머리말: "기본 이동" / "기술 1회 사용 — 추가 이동" */
+.move-segment-head {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  margin: 6px 0 2px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--border);
+}
+
+.move-segment-head.extra {
+  color: #6d28d9;
+  border-bottom-color: #ddd6fe;
+}
+
+/* 구간 도착점 표시: 이 칸이 기본 이동/기술 n회의 최종 위치 */
+.move-arrival {
+  font-size: 11px;
+  color: #334155;
+  background: #f1f5f9;
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.move-arrival.extra {
+  color: #6d28d9;
+  background: #f5f3ff;
+}
+
+/* 장애물·유닛에 막혀 실제로는 실행되지 않는 스텝 */
+.move-arrival.blocked {
+  color: #b91c1c;
+  background: #fef2f2;
+}
+
+/* 추가 이동은 칸수를 고를 수 없다 — select 대신 확정된 칸수를 보여준다 */
+.move-fixed-length {
+  font-size: 11px;
+  color: #6d28d9;
+  background: #f5f3ff;
+  border: 1px solid #ddd6fe;
+  border-radius: 6px;
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+
+.move-step-label {
+  width: 62px;
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.btn-step-add {
+  align-self: flex-start;
+  font-size: 12px;
+  color: #15803d;
+  border: 1px dashed #86efac;
+  background: #f0fdf4;
+  border-radius: 6px;
+  padding: 3px 10px;
+}
+
+/* ---------- 기술 이동(기본 행동이 공격일 때) ---------- */
+
+/* "기본 이동은 없고 기술 몫으로만 움직인다"는 규칙을 편집기 안에서 눈에 띄게 알려 주는 안내 블록 */
+.skillmove-note {
+  padding: 6px 10px;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.log-skillmove {
+  color: #9a3412;
+}
+
+.log-dash {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.dash-note {
+  padding: 6px 10px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* ---------- dealer2 시간 역행 패널 ---------- */
+
+.rewind-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid #ddd6fe;
+  border-radius: 8px;
+  background: #faf5ff;
+}
+
+.rewind-panel.active {
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 1px #7c3aed inset;
+}
+
+.rewind-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rewind-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #6d28d9;
+}
+
+.rewind-charges {
+  font-size: 12px;
+  color: #6d28d9;
+  margin-left: auto;
+}
+
+.rewind-anchor-info {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.rewind-warning {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #b45309;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.rewind-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.rewind-buttons button {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+.btn-rewind-use {
+  background: #7c3aed;
+  color: #fff;
+  border-color: #7c3aed;
+}
+
+.btn-rewind-cancel {
+  color: var(--muted);
+}
+
+.btn-rewind-normal {
+  color: #15803d;
+}
+
+.rewind-buttons button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ---------- HUD: unit status / respawn / log ---------- */
+
+.unit-status-list {
+  min-width: 260px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+
+.unit-status-list table {
+  border-collapse: collapse;
+  font-size: 12px;
+  width: 100%;
+}
+
+.unit-status-list th {
+  text-align: left;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 2px 6px 4px 0;
+}
+
+.unit-status-list td {
+  padding: 3px 6px 3px 0;
+  border-top: 1px solid #f1f5f9;
+}
+
+.respawn-tracker, .resolution-log {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+
+.resolution-log ol {
+  font-size: 12px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding-left: 20px;
+  margin: 4px 0 0;
+}
+
+.resolution-log .log-rewind {
+  color: #6d28d9;
+  font-weight: 600;
+}
+
+/* ---------- Draft / placement ---------- */
+
+.draft-columns, .placement-layout {
+  display: flex;
+  gap: 24px;
+}
+
+.draft-column {
+  flex: 1;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.draft-column ul {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.draft-column button {
+  width: 100%;
+  text-align: left;
+}
+
+/* ---------- 모드 선택 메뉴 / 배너 ---------- */
+
+.mode-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 760px;
+}
+
+.mode-card {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 18px;
+}
+
+.mode-card p {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.difficulty-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.difficulty-btn {
+  flex: 1 1 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 10px 12px;
+}
+
+.difficulty-btn strong {
+  font-size: 15px;
+}
+
+.difficulty-btn span {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.online-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.join-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.join-row input {
+  width: 130px;
+  padding: 7px 10px;
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.room-waiting {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.room-code {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.room-code code {
+  font-size: 26px;
+  letter-spacing: 6px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 8px;
+  background: var(--p1-bg);
+  color: var(--p1);
+}
+
+.online-error {
+  margin: 8px 0 0;
+  color: var(--p2);
+  font-size: 13px;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.mode-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.btn-secondary {
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-bg);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+}
+
+.draft-column.read-only {
+  opacity: 0.85;
+  background: #f8fafc;
+}
+
+.draft-readonly-item {
+  display: block;
+  padding: 5px 8px;
+  font-size: 13px;
+}
