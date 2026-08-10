@@ -339,9 +339,14 @@ function ModeBanner() {
         ? `온라인 대전 · ${online.role === 'host' ? '호스트' : '게스트'} · 방 ${online.roomId ?? '?'} · 내 진영 ${localOwner.toUpperCase()}`
         : '로컬 대전 · 양쪽 모두 조종';
 
+  // 연결이 끊겨도 화면은 그대로 남는다. 배너에서 알리지 않으면 상대가 나간 줄도 모르고
+  // 혼자 계속 두게 되므로, 메뉴 밖(드래프트·배치·대전)에서도 연결 상태를 여기서 드러낸다.
+  const trouble = mode === 'online' ? (online.error ?? (online.status === 'connecting' ? '연결 중…' : null)) : null;
+
   return (
     <div className="mode-banner">
       <span>{label}</span>
+      {trouble && <span className="mode-banner-alert">{trouble}</span>}
       <button
         className="btn-secondary"
         onClick={() => {

@@ -9,21 +9,25 @@ React + TypeScript + Vite로 구현한 동시 턴제 전략 점령 게임. 기�
 - **React 18 + TypeScript(strict) + Vite 5 + Zustand 4 + Vitest 2**
 - 게임 로직은 프레임워크 비의존 순수 함수(`src/engine/*.ts`)로 작성. Zustand 스토어(`src/store/gameStore.ts`)는
   이 순수 엔진을 감싸는 얇은 래퍼.
-- 온라인 멀티플레이 없음, 디버그 모드(양 플레이어 계획을 한 화면에서 동시에 조작).
+- 대전 모드 3종: **로컬**(한 화면에서 양쪽 조작 — 원래의 디버그 모드), **AI**(휴리스틱 3난이도),
+  **온라인**(PeerJS P2P, 방장 권위). GitHub Actions로 GitHub Pages 자동 배포.
 
 ```
 src/
   data/            unitTypes.ts(10종 기물 실제 스탯), mapDefinitions.ts(정원 맵 7구역), constants.ts
   engine/           types.ts, resolveTurn.ts(5단계 오케스트레이터), resolvers/{movement,preAttack,attacks,healing,endOfTurn}.ts,
                      targeting.ts, grid.ts, rng.ts, validation.ts, death.ts, statusEffects.ts, moveReroute.ts
+  ai/               aiPlayer.ts(휴리스틱 계획 생성), difficulty.ts(난이도 프로필)
+  online/           netBridge.ts(PeerJS 방 생성·참가, 방장 권위 스냅샷 동기화)
   store/gameStore.ts
   components/
+    Menu/ModeMenu.tsx
     Board/{Board,UnitToken}.tsx
     Planning/{ActionPanel,UnitActionSelector,SkillTargetPicker,actionGeometry,planSummary}.ts(x)
     Hud/{Scoreboard,UnitStatusList,RespawnTracker,TurnControls}.tsx
     Log/ResolutionLog.tsx
     DraftSetup/{UnitPicker,PlacementScreen}.tsx
-  test/engine/*.test.ts
+  test/{engine,ai}/*.test.ts
 ```
 
 ## 핵심 게임 규칙 구현 현황
@@ -449,6 +453,69 @@ tank3(스킬 2개)·support1(힐 스킬)·dealer1(스킬 0개) 세 가지 케이
 기술 없는 이동은 관통·피해 없음 / 하이라이트 3건(적 뒤 칸 노출·적 칸 제외·distance 정확성).
 브라우저에서도 (4,14)의 tank2가 (4,16)의 적을 밟고 (4,18)까지 4칸 이동해 적 HP 30 → 26,
 로그에 돌진 관통 줄이 뜨는 것을 확인.
+
+### 12) 대전 모드 3종(로컬·AI·온라인) + 배포
+
+"온라인 멀티, AI 대국 구현해서 배포까지" 요청. 이전까지는 **한 화면에서 한 사람이 양쪽을 다 조작하는
+디버그 모드 하나뿐**이었다. 세 모드를 붙이면서 "누가 무엇을 조작할 수 있는가"를 처음으로 명시적인
+상태(`mode` + `localOwner`)로 만들었다.
+
+**모드/메뉴 (`store/gameStore.ts`, `components/Menu/ModeMenu.tsx`)**
+- `stage: 'menu' | 'draft' | 'placement' | 'game'`를 새로 두고 메뉴를 첫 화면으로 삼았다.
+- `mode: 'local' | 'ai' | 'online'`, `localOwner`(내가 조종하는 진영)를 스토어에 추가.
+  화면 곳곳의 "양쪽 다 보여줄까?" 판단이 전부 이 두 값 하나로 통일된다 —
+  `planningOwners = mode === 'local' ? ['p1','p2'] : [localOwner]` (App), 드래프트 열의 `readOnly`,
+  배치 화면의 `owners`, 보드 클릭 허용 여부(`controlsSelected`)까지.
+
+**AI (`ai/aiPlayer.ts`, `ai/difficulty.ts`)**
+- **트리 탐색을 하지 않는다.** 동시 턴 게임이라 상대 계획을 알 수 없어 미니맥스의 이득이 작고,
+  후보가 기물 5개 × (방향 × 거리 × 기술 조합)으로 폭발한다. 대신 기물마다 후보 계획을 만들어
+  **한 수 평가**하고, 협동은 공통 목표항(점령지 거리·적 위치·위협)을 통해 간접적으로 나오게 했다.
+- **난이도 = 탐색 깊이가 아니라 "어떤 실수를 얼마나 자주 하는가"**(`DifficultyProfile`의
+  `noise` / `useSkills` / `captureWeight` / `threatWeight` / `killWeight`). 셋 다 평가 함수는 하나를 공유한다.
+- **불법 계획이 구조적으로 나올 수 없다.** 모든 후보는 엔진의 `isActionLegal`을 통과해야만 채택되고,
+  최종 계획은 `sanitizePlan`을 한 번 더 거친다. AI가 규칙을 잘못 모델링하면 그 후보가 조용히
+  탈락할 뿐, 엔진이 거부할 계획이 나가지 않는다.
+- 평가 함수는 엔진을 **그대로 흉내 낸다** — `attackValue`는 `attacks.ts`(아군이 사선을 막음, 방벽 무효화,
+  aoe 띠 전체 타격, dealer4 측면 +7)를, `walkLine`은 `resolvers/movement.ts`(돌진 관통 + 점유 칸에서
+  한 칸 물러나기)를 미러링한다. 여기가 어긋나면 AI가 "될 줄 알았던 수"를 계속 고른다.
+- dealer2는 **충전이 2 이상일 때만** 추가 이동을 쓴다 — 0에 닿으면 시간역행으로 되돌아가는 함정을
+  AI가 스스로 밟지 않게.
+- AI 대전에서는 편성·배치도 AI가 한다(`aiDraftPicks`, `aiPlacement` — 탱커가 점령지에 가장 가깝게).
+
+**온라인 (`online/netBridge.ts`)**
+- PeerJS(WebRTC) P2P. 방 코드 6자리(`simultaneous-<CODE>`가 peer id), 서버 없음.
+- **방장 권위(host-authoritative)**: 게스트는 자기 스토어를 절대 직접 바꾸지 않고 `RemoteAction`을
+  방장에게 보낸다. 방장이 적용한 뒤 `StoreSnapshot` 전체를 되돌려 보낸다. 이렇게 한 이유는
+  **무작위 요소(우선순위 동률 타이브레이크)가 양쪽에서 따로 굴러 화면이 갈라지는 것**을 막기 위해서다.
+  이 게임은 설계상 숨겨진 정보가 없어(양쪽 계획을 동시에 공개) 상태를 통째로 공유해도 규칙상 손해가 없다.
+- 구현은 스토어 액션마다 한 줄(`if (forwardIfGuest({...})) return;`)로 끝난다 — 분기가 액션 안에 있으므로
+  UI 컴포넌트는 온라인 여부를 몰라도 된다.
+
+**배포**
+- `vite.config.ts`에 `base: './'`(상대 경로) — 저장소 이름이 무엇이든, 루트 도메인에 올려도 동작.
+- `.github/workflows/deploy.yml`: main 푸시 → `npm ci` → `npm test` → `npm run build` →
+  `upload-pages-artifact` → `deploy-pages`. **테스트를 빌드보다 먼저** 돌려 깨진 엔진이 배포되지 않게 했다.
+- `.gitignore`에 `dist`, `*.tsbuildinfo`, `vite.config.js`, `vite.config.d.ts`, `.claude` 추가(전부 산출물/로컬 설정).
+- `README.md` 신규 작성(규칙 요약, 3모드 사용법, AI 설계 근거, 배포 절차).
+
+**실버그 수정**: `createInitialState.ts`의 `createUnitInstance`가 `typeDef.isTurret`을 인스턴스에
+**한 번도 복사하지 않고 있었다**. 그래서 (1) `healing.ts`의 포탑 회복 오라가
+`units.filter(u => u.isTurret)`에 아무것도 걸리지 않아 **아예 돌지 않았고**, (2) 포탑이 계획 패널에
+끼어들 수 있었다. AI 테스트("포탑은 계획 대상이 아니다")가 이 오래된 버그를 처음 드러냈다.
+
+**UI 보강**: 연결이 끊겨도 화면은 그대로 남아 상대가 나간 줄 모르고 혼자 계속 두게 되므로,
+`ModeBanner`가 메뉴 밖(드래프트·배치·대전)에서도 `online.error`/`connecting`을 표시하게 했다
+(`.mode-banner-alert`). 기존에는 이 오류가 메뉴 화면에서만 렌더됐다.
+
+`tsc --noEmit` / `npx vitest run`(10파일 79개 통과) / `npm run build` 통과. 신규
+`test/ai/aiPlayer.test.ts` 13건 — 3난이도 × 10기물 전원에 대해 **엔진이 거부하는 계획이 하나도 없음** /
+죽은 기물·포탑 제외 / 구속 시 이동 계획 없음 / 마무리 사격 / 사거리에 아무도 없으면 점령지로 전진 /
+tank2 일렬 관통 돌진 선택 / dealer3 공격모드 켜고 사격 / support2 회복 / 쉬움은 기술 미사용 /
+드래프트 5기물 / 배치 규칙 / AI끼리 20턴 무예외 진행 + 실제 피해 발생 / 무행동 상대에게 60턴 내 득점.
+브라우저 확인: 어려움 AI가 스스로 편성·배치한 뒤 무행동 상대를 상대로 **9턴 만에 11:0 승리**
+(4기물을 점령지에 밀어 넣음), 온라인은 방 코드 발급 → 게스트 접속 → 게스트가 보낸 `togglePick`이
+방장에 적용되고 스냅샷이 되돌아오는 왕복까지 실제 P2P 연결로 확인.
 
 ## 남아있는 알려진 이슈 / 미정 사항
 

@@ -787,6 +787,14 @@ select, input {
   color: var(--muted);
 }
 
+/* 연결 문제는 배너 안에서 눈에 띄어야 한다 — 나머지 배너 텍스트는 muted라 그냥 두면 묻힌다. */
+.mode-banner-alert {
+  margin-left: auto;
+  margin-right: 12px;
+  color: var(--danger, #dc2626);
+  font-weight: 600;
+}
+
 .btn-secondary {
   padding: 5px 12px;
   border: 1px solid var(--border);
