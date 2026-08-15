@@ -2,6 +2,8 @@ import type { Direction, GameState, UnitInstance, UnitTurnPlan } from './types';
 import { getUnitType } from '../data/unitTypes';
 import { DIAGONAL_DIRECTIONS } from './grid';
 import { hasActiveEffect, sumMagnitude } from './statusEffects';
+import { skillRangeSpec } from './skillRange';
+import { isWithinSkillRange } from './targeting';
 import {
   canPlanSkillMove,
   countInSegmentTurns,
@@ -10,6 +12,7 @@ import {
   moveSegmentCapacities,
   normalizedMoveAction,
   planMoveCapacity,
+  plannedDestination,
   resolveSegmentLengths,
   segmentOrigins,
   staticRunLimit,
@@ -102,6 +105,19 @@ export function isActionLegal(state: GameState, unit: UnitInstance, plan: UnitTu
     // 지원 기물: 공격 또는 힐 중 하나만(3.2절)
     if (typeDef.role === 'support' && skill.effectCategory === 'heal' && plan.baseAction.kind === 'attack') {
       return false;
+    }
+    // 대상 지정 기술의 사거리. 이게 없으면 UI에서 맵 반대편 기물을 골라도 그대로 통과한다.
+    //
+    // 기준 칸은 현재 위치가 아니라 **이번 턴 도착할 칸**이다. 이동과 기술은 함께 계획할 수 있고
+    // 이동이 먼저 해결되므로, 출발 칸으로 재면 "옆으로 비켜서서 회복 라인을 여는" 정상적인 수가
+    // 전부 불법이 된다. 어디까지나 계획 시점의 **1차 검사**이고, 다른 기물의 방해나 대상의 이동으로
+    // 실제로는 빗나갈 수 있어서 해결 단계에서 한 번 더 본다(healing.ts/preAttack.ts).
+    const spec = skillRangeSpec(skill);
+    if (spec) {
+      const target = state.units.find((u) => u.instanceId === plan.skillUse!.target && u.alive);
+      if (!target || !target.position) return false;
+      const from = plannedDestination(unit, plan, state.board);
+      if (!from || !isWithinSkillRange(from, target.position, spec.range, state.board, spec.axis)) return false;
     }
   }
 

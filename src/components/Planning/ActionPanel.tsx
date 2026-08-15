@@ -2,7 +2,7 @@ import type { Owner } from '../../engine/types';
 import { useGameStore } from '../../store/gameStore';
 import { getUnitType } from '../../data/unitTypes';
 import { REWIND_SKILL_ID } from '../../data/constants';
-import { hasActiveEffect } from '../../engine/statusEffects';
+import { hasActiveEffect, sumMagnitude } from '../../engine/statusEffects';
 import { UnitActionSelector } from './UnitActionSelector';
 import { summarizeBaseAction, summarizeSkillMove, summarizeSkillUse } from './planSummary';
 
@@ -63,6 +63,11 @@ export function ActionPanel({ owner, label }: Props) {
                     {hasActiveEffect(unit, 'root', state.turnNumber) && <span className="badge badge-root">구속</span>}
                     {hasActiveEffect(unit, 'barrier', state.turnNumber) && <span className="badge badge-barrier">방벽</span>}
                     {hasActiveEffect(unit, 'attackMode', state.turnNumber) && <span className="badge badge-attackmode">공격모드</span>}
+                    {/* 조준 보조는 지속시간이 짧아 "지금 이 턴에 얼마나 세졌는지"를 그 자리에서 못 보면
+                        계획을 못 세운다. 그래서 증가분을 숫자로 같이 띄운다(여러 개면 합산). */}
+                    {sumMagnitude(unit, 'buff', state.turnNumber) > 0 && (
+                      <span className="badge badge-buff">공격 +{sumMagnitude(unit, 'buff', state.turnNumber)}</span>
+                    )}
                     {/* dealer2 시간역행: 접힌 상태에서도 남은 사용량과 기준 체력이 바로 보여야 한다(§9). */}
                     {rewindMax > 0 && (
                       <span className="badge badge-rewind">

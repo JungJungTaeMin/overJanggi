@@ -133,12 +133,17 @@ describe('skills and status effects', () => {
     // §8: "사망한 동안에도 기술 2의 쿨타임은 정상적으로 감소하지만, 부활 시 초기화하지 않는다."
     const state = emptyState();
     const tank3 = addUnit(state, 'tank3', 'p1', { x: 0, y: 0 }); // skill2 = tank3_root, cooldown 5
-    const killer = addUnit(state, 'dealer1', 'p2', { x: 4, y: 0 }); // attack 8, range 6
+    // 구속 사거리(직선·대각선 3칸) 안에 둔다. 대상 없이 기술만 계획하면 이제 계획 자체가
+    // 무효화되어(validation) 쿨타임이 아예 걸리지 않는다 — 이 테스트의 주제는 사망 중 쿨타임
+    // 감소이므로, 기술이 실제로 나가도록 유효한 대상을 준다.
+    const killer = addUnit(state, 'dealer1', 'p2', { x: 3, y: 0 }); // attack 8, range 6
     tank3.currentHp = 1;
 
     resolveTurn(
       state,
-      plan('p1', 1, { [tank3.instanceId]: { baseAction: { kind: 'none' }, skillUse: { skillId: 'tank3_root' } } }),
+      plan('p1', 1, {
+        [tank3.instanceId]: { baseAction: { kind: 'none' }, skillUse: { skillId: 'tank3_root', target: killer.instanceId } },
+      }),
       plan('p2', 1, { [killer.instanceId]: { baseAction: { kind: 'attack', direction: 'left' } } }),
       rngFor('p1'),
     );

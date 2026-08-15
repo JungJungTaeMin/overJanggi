@@ -1,6 +1,7 @@
 import type { ActionPlan, GameState, ResolutionEvent, UnitInstance } from '../types';
 import { getUnitType, turretType } from '../../data/unitTypes';
 import { radiusCells } from '../targeting';
+import { canTargetWithSkill } from '../skillRange';
 import { samePosition } from '../grid';
 
 interface PendingHeal {
@@ -34,7 +35,10 @@ export function resolveHealing(state: GameState, planP1: ActionPlan, planP2: Act
       } else if (skill.id === 'support2_heal') {
         const targetId = unitPlan.skillUse!.target as string | undefined;
         const target = state.units.find((u) => u.instanceId === targetId && u.alive);
-        if (target) {
+        // 사거리(직선 N칸, 장애물이 시야를 막으면 불가)는 여기서 반드시 다시 본다 — validation이
+        // 이미 걸렀더라도 이 단계는 **이동이 끝난 뒤**라, 계획 시점에는 닿았던 대상이 서로
+        // 움직여서 벌어졌을 수 있다. 사거리는 회복이 실제로 일어나는 시점 기준이어야 한다.
+        if (target && canTargetWithSkill(unit, target, skill, state.board)) {
           pending.push({ target, amount: skill.payload.healAmount });
           log.push({ phase: 'heal', type: 'heal', actorId: unit.instanceId, targetId: target.instanceId, detail: { amount: skill.payload.healAmount } });
         }

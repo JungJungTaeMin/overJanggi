@@ -364,6 +364,8 @@ export function UnitActionSelector({ unit, allUnits, board, turnNumber, plan, on
               skill={selectedSkill}
               unit={unit}
               allUnits={allUnits}
+              board={board}
+              plan={plan}
               value={skillUse?.target}
               onChange={(target) => onSkillUse({ skillId: selectedSkill.id, target })}
             />

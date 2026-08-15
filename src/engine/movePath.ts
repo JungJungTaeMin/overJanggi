@@ -147,6 +147,28 @@ export function staticStep(from: Position, dir: Direction, board: BoardConfig): 
 }
 
 /**
+ * 이 계획대로 움직였을 때 **도착할 셈인 칸**. 지형만 보고 걸으며 다른 기물의 방해는 고려하지 않는다
+ * — 누가 길을 막는지는 이동 단계에서야 정해지기 때문이다.
+ *
+ * 대상 지정 기술의 사거리를 계획 시점에 검사하려면 이 값이 필요하다. 사거리를 **출발 칸** 기준으로
+ * 보면 "옆으로 한 칸 비켜서서 회복 라인을 여는" 정상적인 수가 전부 불법이 되어 버린다 —
+ * support2의 회복이 직선 제약이라 특히 그렇다.
+ */
+export function plannedDestination(unit: UnitInstance, plan: UnitTurnPlan, board: BoardConfig): Position | null {
+  if (!unit.position) return null;
+  const move = normalizedMoveAction(plan);
+  if (!move) return unit.position;
+  const path = move.path ?? Array.from({ length: move.distance }, () => move.direction);
+  let current = unit.position;
+  for (const dir of path) {
+    const next = staticStep(current, dir, board);
+    if (!next) break; // 지형에 막히면 거기까지가 이번 턴의 도착 칸이다
+    current = next;
+  }
+  return current;
+}
+
+/**
  * 각 구간이 출발하는 칸을 앞에서부터 걸어가며 구한다(정적 장애물 기준).
  * 반환 배열의 길이는 `segmentLengths.length + 1` — 마지막 원소는 아직 채우지 않은 다음 구간의 출발 칸이다.
  * 중간에 막히면 그 이후는 전부 null이다.

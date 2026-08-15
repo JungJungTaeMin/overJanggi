@@ -321,6 +321,8 @@ select, input {
 .badge-barrier { background: #2563eb; }
 .badge-attackmode { background: #7c3aed; }
 .badge-shield { background: #0284c7; }
+/* 조준 보조(공격력 증가)는 방어 계열(파랑)·제어 계열(빨강)과 구분되게 공격 계열 주황으로. */
+.badge-buff { background: #ea580c; }
 /* 시간 역행 관련 표시는 보드의 경로/기준점 색(REWIND_COLOR)과 같은 보라색으로 통일한다. */
 .badge-rewind { background: #7c3aed; }
 

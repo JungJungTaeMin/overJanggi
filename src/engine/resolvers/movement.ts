@@ -7,6 +7,7 @@ import { killUnit } from '../death';
 import { applyDamage } from '../damage';
 import { isSkillOnlyMove, plannedChargeUses, resolveMovePath } from '../movePath';
 import { resolvedMoveSpeed } from '../unitStats';
+import { canTargetWithSkill } from '../skillRange';
 
 interface MoveIntent {
   unit: UnitInstance;
@@ -100,7 +101,10 @@ export function resolveMovement(
       } else if (skill.id === 'dealer4_swap') {
         const targetId = unitPlan.skillUse!.target as string | undefined;
         const ally = state.units.find((u) => u.instanceId === targetId && u.alive && u.owner === unit.owner);
-        if (ally && unit.position && ally.position) {
+        // 자리교체는 **대각선 3칸 이내**만(기획서 7장). 이 검사가 없던 동안 dealer4는 맵 어디로든
+        // 순간이동할 수 있었다. 여기는 이동 단계 맨 앞이라 아직 아무도 움직이지 않았고, 자리교체
+        // 자체가 곧 이동이므로 턴 시작 위치 기준으로 판정하는 것이 맞다.
+        if (ally && unit.position && ally.position && canTargetWithSkill(unit, ally, skill, state.board)) {
           const tmp = unit.position;
           unit.position = ally.position;
           ally.position = tmp;

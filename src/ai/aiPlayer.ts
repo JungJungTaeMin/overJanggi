@@ -398,7 +398,7 @@ function generateCandidates(state: GameState, unit: UnitInstance, profile: Diffi
     // 포탑이 전진을 막는 것으로 보여, 옆으로만 오가며 점령지에 영영 못 들어간다(실측: 점령 체류 0).
     const stateWithoutMyTurret: GameState = {
       ...state,
-      units: state.units.filter((u) => !(u.isTurret && u.summonerId === unit.instanceId)),
+      units: state.units.filter((u) => !(u.isTurret && u.owner === unit.owner)),
     };
     const canPlaceAt = (from: Position) => {
       const cell = step(from, forward);

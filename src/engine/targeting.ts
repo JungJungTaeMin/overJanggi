@@ -69,6 +69,51 @@ export function frontBandCells(position: Position, direction: Direction, board: 
   );
 }
 
+/**
+ * **대상 지정 기술의 사거리 판정.** 회복·구속·자리교체처럼 "판 위의 특정 기물"을 고르는 기술이
+ * 실제로 닿는지를 결정하는 단일 근거다.
+ *
+ * 이 함수가 생긴 이유: 예전에는 `payload.range`가 **아무 데서도 읽히지 않았다**. 해결 단계는
+ * instanceId로 대상을 찾아 거리 검사 없이 바로 적용했고, validation도 쿨타임·충전만 봤으며,
+ * UI는 살아 있는 아군/적 전체를 드롭다운에 넣었다. 그래서 "회복 직선 4칸"인 support2가 실제로는
+ * 13×19 맵 어디로든 회복했고, "대각선 3칸" 자리교체인 dealer4는 사실상 무제한 순간이동이었다.
+ * 데이터의 사거리 숫자를 올려도 게임이 전혀 변하지 않는 상태였다.
+ *
+ * 축(axis) 의미:
+ *   - `orthogonal` — 같은 행 또는 열(기획서의 "직선"). 대각선은 닿지 않는다.
+ *   - `diagonal`   — 정확한 대각선(|dx| === |dy|).
+ *   - `both`       — 직선 또는 대각선.
+ *   - `radius`     — 축 제한 없는 체비셰프 반경(범위형 기술용).
+ *
+ * 장애물은 시야를 막는다 — 직선 공격이 장애물 뒤를 때리지 못하는 것과 같은 규칙을 적용해,
+ * 벽 너머로 회복하거나 구속할 수 없게 한다(§3.4).
+ */
+export type SkillAxis = 'orthogonal' | 'diagonal' | 'both' | 'radius';
+
+export function isWithinSkillRange(
+  from: Position,
+  to: Position,
+  range: number,
+  board: BoardConfig,
+  axis: SkillAxis = 'orthogonal',
+): boolean {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (dx === 0 && dy === 0) return false; // 자기 자신은 대상이 아니다
+
+  const onOrthogonal = dx === 0 || dy === 0;
+  const onDiagonal = Math.abs(dx) === Math.abs(dy);
+  if (axis === 'orthogonal' && !onOrthogonal) return false;
+  if (axis === 'diagonal' && !onDiagonal) return false;
+  if (axis === 'both' && !onOrthogonal && !onDiagonal) return false;
+
+  // 직선·대각선 위에서는 칸 수가 곧 거리이고, radius는 체비셰프 거리를 쓴다.
+  const distance = Math.max(Math.abs(dx), Math.abs(dy));
+  if (distance > range) return false;
+
+  return hasLineOfSight(from, to, board);
+}
+
 /** 범위 공격/회복용 반경 판정 */
 export function radiusCells(
   center: Position,
