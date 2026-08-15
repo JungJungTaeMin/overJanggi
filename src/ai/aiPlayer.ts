@@ -6,6 +6,8 @@ import type {
   GameState,
   Owner,
   Position,
+  AttackShape,
+  SkillDef,
   UnitInstance,
   UnitTurnPlan,
 } from '../engine/types';
@@ -18,7 +20,8 @@ import {
   samePosition,
   step,
 } from '../engine/grid';
-import { frontBandCells, lineCells } from '../engine/targeting';
+import { frontBandCells, isWithinSkillRange, lineCells } from '../engine/targeting';
+import { skillRangeSpec } from '../engine/skillRange';
 import { hasActiveEffect, sumMagnitude } from '../engine/statusEffects';
 import { isActionLegal, sanitizePlan } from '../engine/validation';
 import { staticRunLimit } from '../engine/movePath';
@@ -57,6 +60,18 @@ function roleValue(unit: UnitInstance): number {
 
 function chebyshev(a: Position, b: Position): number {
   return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+}
+
+/**
+ * 이 칸에서 그 기술로 대상에게 닿는지. 사거리와 축은 전부 데이터/공용 표에서 읽는다
+ * (engine/skillRange.ts) — AI가 자기 숫자를 따로 들고 있으면 데이터를 바꿔도 AI만 옛날 값으로
+ * 움직이게 되고, 실제로 그 버그 때문에 회복 사거리를 4→7로 올려도 시뮬레이션 결과가 한 자리도
+ * 변하지 않았다.
+ */
+function reaches(from: Position, target: UnitInstance, skill: SkillDef, board: BoardConfig): boolean {
+  const spec = skillRangeSpec(skill);
+  if (!spec || !target.position) return false;
+  return isWithinSkillRange(from, target.position, spec.range, board, spec.axis);
 }
 
 /** 점령지까지의 거리(가장 가까운 점령 칸 기준). 점령지 안이면 0. */
@@ -131,14 +146,78 @@ function attackValue(
   return 0;
 }
 
-/** 이 칸에 서면 다음 턴 적에게 얼마나 맞을 수 있는지(대략치: 사거리 + 이동 Lv 안이면 위협). */
-function threatAt(state: GameState, unit: UnitInstance, dest: Position): number {
+/**
+ * `from`에 선 기물이 `to` 칸을 **공격 사거리·축 안에 넣기까지** 필요한 최소 이동 칸 수.
+ * 이미 조준선 위면 0이다.
+ *
+ * 왜 이게 필요한가: 예전 `threatAt`은 체비쇼프 거리 하나로만 위협을 쟀다. 그러면 직선 공격
+ * 기물이 자기 행·열이 아닌 칸까지 전부 위협하는 것으로 계산돼, 실제로는 못 맞히는 기물이
+ * 주변 사각형 전체를 지배하는 것처럼 보인다. support2에 공격을 줬을 때 승점이 44→51%로
+ * 뛰었다가 위협 계산에서 빼자 44%로 돌아온 게 바로 이 과대평가였다.
+ *
+ * 장애물과 다른 기물은 일부러 무시한다 — 막힐 수도 있다는 이유로 위협을 깎으면 실제로 뚫렸을 때
+ * 그대로 죽는다. 위협은 **상한**으로 잡는 편이 안전하다.
+ */
+export function stepsToLineUp(from: Position, to: Position, shape: AttackShape, diagonalMove: boolean): number {
+  const dx = Math.abs(to.x - from.x);
+  const dy = Math.abs(to.y - from.y);
+  const r = shape.range;
+
+  /**
+   * 한 걸음이 (dx, dy)를 얼마나 바꿀 수 있는지가 이동 방식으로 갈린다:
+   *   - 대각선 이동 가능 → 한 걸음에 둘 다 1씩 바꿀 수 있으므로 **더 큰 쪽**이 곧 걸음 수다
+   *   - 직교 이동만 가능 → 한 걸음에 하나씩만 바꾸므로 **합**이 걸음 수다
+   * 이 구분이 없으면 dealer4(대각 이동)의 접근 속도를 실제보다 느리게 본다.
+   */
+  const cost = (needX: number, needY: number) => (diagonalMove ? Math.max(needX, needY) : needX + needY);
+
+  // 범위형(tank3의 전방 3칸 띠)·근접은 축 제약이 없으니 거리만 좁히면 된다. 띠의 정확한 도형 대신
+  // 사거리 원으로 근사하는데, 위협을 **과소평가하지 않는** 쪽이라 안전한 방향의 오차다.
+  if (shape.kind !== 'line') return cost(Math.max(0, dx - r), Math.max(0, dy - r));
+
+  // 직선 공격: 한 축을 0으로 만들고(정렬) 남은 축을 사거리 안으로 넣어야 한다(접근).
+  // 두 축 중 어느 쪽으로 정렬하든 되므로 싼 쪽을 고른다.
+  const orthogonal = Math.min(cost(dx, Math.max(0, dy - r)), cost(Math.max(0, dx - r), dy));
+
+  // 대각선 공격: dx == dy == t(단 t ≤ 사거리)가 되어야 사선에 오른다. t를 0..사거리로 훑어
+  // 가장 싼 값을 고른다 — 사거리가 6 이하라 순회 비용은 무시할 만하고, 닫힌 식보다 틀릴 여지가 없다.
+  let diagonal = Infinity;
+  for (let t = 0; t <= r; t++) diagonal = Math.min(diagonal, cost(Math.abs(dx - t), Math.abs(dy - t)));
+
+  const axis = shape.axis ?? 'orthogonal';
+  if (axis === 'orthogonal') return orthogonal;
+  if (axis === 'diagonal') return diagonal;
+  return Math.min(orthogonal, diagonal);
+}
+
+/**
+ * 이 칸에 서면 **이번 턴 공격 단계에서** 적에게 얼마나 맞을 수 있는지.
+ *
+ * 동시 턴이라 적도 이번 턴에 움직인 뒤 때린다 — 그래서 "적의 이동력만큼 다가와서 조준선에
+ * 올릴 수 있는가"를 본다. 이번 턴에 때릴 수 없는 게 확실한 적은 아예 세지 않는다:
+ *
+ *   - 기본공격 쿨타임 중(dealer1은 한 번 쏘면 3턴을 못 쏜다) → 이번 턴 공격이 불법이다
+ *   - 구속당한 적 → 다가올 수 없다(사거리는 그대로 위협)
+ *   - dealer3 → 이동과 공격이 같은 턴에 절대 불가하다(validation.ts). 제자리 사거리만 위협
+ *
+ * 앞의 두 가지는 `validation.ts`가 강제하는 규칙을 그대로 옮긴 것이라 근사치가 아니라 정확하다.
+ */
+export function threatAt(state: GameState, unit: UnitInstance, dest: Position): number {
   let threat = 0;
   for (const enemy of livingUnits(state, unit.owner === 'p1' ? 'p2' : 'p1')) {
     const typeDef = getUnitType(enemy.typeId);
     if (!typeDef.canAttack) continue;
-    const reach = typeDef.attackShape.range + plannedMoveSpeed(unit);
-    if (chebyshev(dest, enemy.position!) <= reach) threat += plannedAttackPower(enemy);
+    // 이번 턴에 기본공격 자체가 불법인 적은 위협이 0이다.
+    if ((enemy.cooldowns['basicAttack'] ?? 0) > 0) continue;
+
+    // **적의** 이동력이다. 예전에는 여기에 위협을 받는 쪽(`unit`)의 이동력이 들어가 있어서,
+    // 발이 느린 기물은 적을 실제보다 덜 무서워하고 발 빠른 기물은 더 무서워했다 — 정확히 반대다.
+    const canClose = !hasActiveEffect(enemy, 'root', state.turnNumber) && enemy.typeId !== 'dealer3';
+    const allowance = canClose ? plannedMoveSpeed(enemy) : 0;
+
+    if (stepsToLineUp(enemy.position!, dest, typeDef.attackShape, typeDef.diagonalMove) <= allowance) {
+      threat += plannedAttackPower(enemy);
+    }
   }
   return threat;
 }
@@ -303,7 +382,13 @@ function generateCandidates(state: GameState, unit: UnitInstance, profile: Diffi
     }
     if (skillReady('tank3_root')) {
       // 점령지에 있거나 점령지로 달려오는 적을 묶는 게 가장 값어치가 크다.
-      const target = pickBy(enemies, (e) => 12 - distanceToCaptureZone(e.position!, state.board) - chebyshev(here, e.position!) * 0.5);
+      // 사거리 안의 적만 고른다 — 예전에는 판 위의 적 전체에서 골랐고, 엔진도 사거리를 안 봐서
+      // 맵 반대편 기물을 묶을 수 있었다.
+      const rootSkill = typeDef.skills.find((s) => s.id === 'tank3_root')!;
+      const target = pickBy(
+        enemies.filter((e) => reaches(here, e, rootSkill, state.board)),
+        (e) => 12 - distanceToCaptureZone(e.position!, state.board) - chebyshev(here, e.position!) * 0.5,
+      );
       if (target) {
         const root = { skillId: 'tank3_root', target: target.instanceId };
         push({ baseAction: { kind: 'none' }, skillUse: root }, here, 6);
@@ -365,25 +450,74 @@ function generateCandidates(state: GameState, unit: UnitInstance, profile: Diffi
     for (const m of moveCandidates) push({ baseAction: m.action, skillUse: heal }, m.dest, worthAt(m.dest));
   }
 
-  // support2: 직선 4칸 회복 / 직선 2칸 구속. 공격을 못 하는 기물이라 매 턴 둘 중 하나는 써야 한다.
+  // support2: 직선 회복 / 직선 2칸 구속 / 직선 조준 보조. 공격을 못 하는 기물이라 매 턴 셋 중
+  // 하나는 써야 한다. 셋 다 사거리 안에 대상이 있어야 하므로 후보가 하나도 안 나오는 턴이 있는데,
+  // 조준 보조가 생기기 전에는 그런 턴이 **전체의 90%**였다(scripts/support2Opportunity.ts).
   if (unit.typeId === 'support2') {
-    const wounded = pickBy(
-      allies.filter((a) => a.currentHp < a.maxHp && chebyshev(here, a.position!) <= 4),
-      (a) => (a.maxHp - a.currentHp) * roleValue(a),
-    );
-    if (wounded) {
-      const heal = { skillId: 'support2_heal', target: wounded.instanceId };
-      const worth = Math.min(3, wounded.maxHp - wounded.currentHp) * 2.5 * roleValue(wounded);
-      push({ baseAction: { kind: 'none' }, skillUse: heal }, here, worth);
-      for (const m of moveCandidates) push({ baseAction: m.action, skillUse: heal }, m.dest, worth);
+    const healSkill = typeDef.skills.find((s) => s.id === 'support2_heal')!;
+    const rootSkill = typeDef.skills.find((s) => s.id === 'support2_root')!;
+    const buffSkill = typeDef.skills.find((s) => s.id === 'support2_buff')!;
+    const wounded = allies.filter((a) => a.currentHp < a.maxHp);
+
+    // 사거리는 **도착 칸 기준**으로 따진다. 회복이 직선 제약이라 한 칸만 비켜서도 닿는 대상이
+    // 통째로 바뀌므로, 제자리에서만 재면 "라인을 열려고 옆으로 서는" 수를 아예 못 찾는다.
+    // (예전에는 여기에 `chebyshev(here, a) <= 4`가 하드코딩돼 있어서, 데이터의 사거리를 올려도
+    //  AI가 그 숫자를 못 보고 게임이 전혀 변하지 않았다.)
+    const healFrom = (from: Position) => {
+      const target = pickBy(
+        wounded.filter((a) => reaches(from, a, healSkill, state.board)),
+        (a) => (a.maxHp - a.currentHp) * roleValue(a),
+      );
+      if (!target) return null;
+      const worth = Math.min(3, target.maxHp - target.currentHp) * 2.5 * roleValue(target);
+      return { skillUse: { skillId: 'support2_heal', target: target.instanceId }, worth };
+    };
+    const healHere = healFrom(here);
+    if (healHere) push({ baseAction: { kind: 'none' }, skillUse: healHere.skillUse }, here, healHere.worth);
+    for (const m of moveCandidates) {
+      const healThere = healFrom(m.dest);
+      if (healThere) push({ baseAction: m.action, skillUse: healThere.skillUse }, m.dest, healThere.worth);
     }
+
     const rootTarget = pickBy(
-      enemies.filter((e) => chebyshev(here, e.position!) <= 2),
+      enemies.filter((e) => reaches(here, e, rootSkill, state.board)),
       (e) => 12 - distanceToCaptureZone(e.position!, state.board),
     );
     if (rootTarget) {
       const root = { skillId: 'support2_root', target: rootTarget.instanceId };
       push({ baseAction: { kind: 'none' }, skillUse: root }, here, 5);
+    }
+
+    /**
+     * 조준 보조. 회복과 달리 **다치지 않은 아군에게도** 걸리므로 후보 풀이 훨씬 넓다 — 그게 이
+     * 기술을 넣은 이유 자체다. 대신 아무에게나 걸면 낭비이므로 두 가지를 거른다:
+     *   - 공격을 못 하거나(`canAttack` false, 예: 다른 support2) 기본공격 쿨타임에 걸린 아군
+     *     (dealer1은 한 번 쏘면 3턴을 못 쏜다 — 그 사이 버프를 주면 그대로 버려진다)
+     *   - 적과 너무 멀어 이번 턴에도 다음 턴에도 못 때릴 아군
+     * 지속시간이 이번 턴과 다음 턴을 덮으므로(방벽·구속과 같은 규약) 사거리 + 이동력만큼 여유를 준다.
+     */
+    const bonus = buffSkill.payload.attackBonus ?? 0;
+    const willFight = (a: UnitInstance) => {
+      const def = getUnitType(a.typeId);
+      if (!def.canAttack || (a.cooldowns['basicAttack'] ?? 0) > 0) return false;
+      const reach = def.attackShape.range + plannedMoveSpeed(a);
+      return enemies.some((e) => chebyshev(a.position!, e.position!) <= reach);
+    };
+    const buffFrom = (from: Position) => {
+      const target = pickBy(
+        allies.filter((a) => willFight(a) && reaches(from, a, buffSkill, state.board)),
+        // 같은 +N이라도 오래 살아남아 여러 번 때릴 기물에게 주는 편이 낫다.
+        (a) => roleValue(a) * (a.currentHp + a.shieldHp),
+      );
+      if (!target) return null;
+      // 버프의 값어치는 결국 "추가로 들어갈 피해"다. 회복(부상 3당 7.5점)과 눈금을 맞춰 1.5배로 둔다.
+      return { skillUse: { skillId: 'support2_buff', target: target.instanceId }, worth: bonus * 1.5 * roleValue(target) };
+    };
+    const buffHere = buffFrom(here);
+    if (buffHere) push({ baseAction: { kind: 'none' }, skillUse: buffHere.skillUse }, here, buffHere.worth);
+    for (const m of moveCandidates) {
+      const buffThere = buffFrom(m.dest);
+      if (buffThere) push({ baseAction: m.action, skillUse: buffThere.skillUse }, m.dest, buffThere.worth);
     }
   }
 

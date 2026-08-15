@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aiActionPlan, aiDraftPicks, aiPlacement, planForUnit } from '../../ai/aiPlayer';
+import { aiActionPlan, aiDraftPicks, aiPlacement, planForUnit, threatAt } from '../../ai/aiPlayer';
 import { DIFFICULTY_PROFILES } from '../../ai/difficulty';
 import { seededRng } from '../../engine/rng';
 import { isActionLegal } from '../../engine/validation';
@@ -185,5 +185,93 @@ describe('AI — 실전 진행', () => {
       resolveTurn(state, emptyPlan('p1', state.turnNumber), aiActionPlan(state, 'p2', 'hard', random), random);
     }
     expect(state.score.p2).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * 위협 계산은 AI가 "어디에 서면 안 되는가"를 정하는 유일한 근거라, 여기가 틀리면 밸런스 측정
+ * 전체가 오염된다. 실제로 그런 일이 있었다: support2에 공격력 4를 주자 승점이 44.0→51.1%로
+ * 뛰었는데, 판당 실제 피해는 1.0뿐이었다. 공격력 4를 둔 채 적의 위협 계산에서만 빼자 44.3%로
+ * 돌아왔다 — 상승분 전부가 "적 AI가 못 맞히는 총을 무서워한 것"이었다.
+ *
+ * 그래서 아래 검사들은 전부 **엔진 규칙과 기하로 반증 가능한 명제**만 고른다. 취향이나 튜닝값이
+ * 아니라 validation.ts가 강제하는 규칙, 혹은 격자에서 셀 수 있는 거리다.
+ */
+describe('AI — 위협 계산(threatAt)', () => {
+  it('직선 공격 기물은 정렬할 수 있는 칸만 위협한다 — 주변 사각형 전체가 아니다', () => {
+    const state = emptyState();
+    const victim = addUnit(state, 'tank1', 'p1', { x: 0, y: 0 });
+    addUnit(state, 'dealer1', 'p2', { x: 4, y: 0 }); // 직선 6 · 이동 1 · 공격력 8
+
+    // 같은 열 위 4칸 → 그냥 쏘면 된다.
+    expect(threatAt(state, victim, { x: 4, y: 4 })).toBe(8);
+    // 두 칸 옆 → 사선에 올리려면 2칸 옆으로 가야 하는데 이동력이 1이다. 체비쇼프 거리는 4라
+    // 예전 계산은 여기를 위협으로 봤다.
+    expect(threatAt(state, victim, { x: 6, y: 4 })).toBe(0);
+  });
+
+  it('위협의 크기는 맞는 쪽이 아니라 **쏘는 쪽**의 이동력으로 정해진다', () => {
+    const state = emptyState();
+    // 발 느린 기물과 발 빠른 기물이 같은 칸을 평가한다. 예전에는 여기에 맞는 쪽의 이동력이
+    // 들어가 있어서, 같은 칸인데도 tank2(이동 4)만 위협으로 보고 support2(이동 1)는 안전하다고 봤다.
+    const slow = addUnit(state, 'support2', 'p1', { x: 0, y: 0 });
+    const fast = addUnit(state, 'tank2', 'p1', { x: 1, y: 0 });
+    addUnit(state, 'dealer1', 'p2', { x: 4, y: 0 }); // 직선 6 · 이동 1
+
+    const cell = { x: 4, y: 8 }; // 같은 열이지만 8칸 밖 — 사거리 6 + 이동 1로는 못 닿는다
+    expect(threatAt(state, slow, cell)).toBe(threatAt(state, fast, cell));
+    expect(threatAt(state, slow, cell)).toBe(0);
+  });
+
+  it('기본공격 쿨타임 중인 적은 이번 턴 공격이 불법이므로 위협이 0이다', () => {
+    const state = emptyState();
+    const victim = addUnit(state, 'tank1', 'p1', { x: 0, y: 0 });
+    const sniper = addUnit(state, 'dealer1', 'p2', { x: 4, y: 0 });
+
+    expect(threatAt(state, victim, { x: 4, y: 4 })).toBe(8);
+    sniper.cooldowns['basicAttack'] = 2; // 한 번 쏘면 3턴을 못 쏜다
+    expect(threatAt(state, victim, { x: 4, y: 4 })).toBe(0);
+  });
+
+  it('구속당한 적은 다가오지 못하므로 제자리 사거리 밖은 안전하다', () => {
+    const state = emptyState();
+    const victim = addUnit(state, 'tank1', 'p1', { x: 0, y: 0 });
+    const charger = addUnit(state, 'tank2', 'p2', { x: 4, y: 0 }); // 직선 4 · 이동 4 · 공격력 2
+
+    expect(threatAt(state, victim, { x: 4, y: 6 })).toBe(2); // 2칸 다가와서 쏠 수 있다
+    charger.statusEffects.push({ type: 'root', appliedOnTurn: 1, expiresAfterTurn: 2, sourceId: 'x' });
+    expect(threatAt(state, victim, { x: 4, y: 6 })).toBe(0);
+    expect(threatAt(state, victim, { x: 4, y: 4 })).toBe(2); // 사거리 안은 묶여 있어도 여전히 위험
+  });
+
+  it('dealer3은 이동과 공격을 같은 턴에 못 하므로 제자리 사거리까지만 위협한다', () => {
+    const state = emptyState();
+    const victim = addUnit(state, 'tank1', 'p1', { x: 0, y: 0 });
+    addUnit(state, 'dealer3', 'p2', { x: 4, y: 0 }); // 직선·대각 4 · 이동 1 · 공격력 10
+
+    expect(threatAt(state, victim, { x: 4, y: 4 })).toBe(10);
+    // 한 칸만 더 가면 닿지만, 그 한 칸을 가면 이번 턴에 못 쏜다(validation.ts).
+    expect(threatAt(state, victim, { x: 4, y: 5 })).toBe(0);
+  });
+
+  it('대각선 이동이 가능한 기물은 조준 오차를 걸음당 2씩 줄인다', () => {
+    const state = emptyState();
+    const victim = addUnit(state, 'tank1', 'p1', { x: 0, y: 0 });
+    addUnit(state, 'dealer4', 'p2', { x: 4, y: 0 }); // 대각선 3 · 이동 2 · 공격력 5 · 대각 이동 가능
+
+    // (4,3)은 dealer4의 대각선 위가 아니다. 직교로만 움직이면 정렬에 3칸이 들어 이동력 2로는
+    // 못 맞추지만, 대각 이동이면 (3,1)→(2,1) 두 걸음으로 대각 거리 2의 사선에 오른다.
+    expect(threatAt(state, victim, { x: 4, y: 3 })).toBe(5);
+    // 너무 멀면 두 걸음으로는 안 된다.
+    expect(threatAt(state, victim, { x: 4, y: 7 })).toBe(0);
+  });
+
+  it('여러 적의 위협은 합산된다', () => {
+    const state = emptyState();
+    const victim = addUnit(state, 'tank1', 'p1', { x: 0, y: 0 });
+    addUnit(state, 'dealer1', 'p2', { x: 4, y: 0 }); // 공격력 8
+    addUnit(state, 'dealer3', 'p2', { x: 4, y: 8 }); // 공격력 10, (4,4)까지 직선 4
+
+    expect(threatAt(state, victim, { x: 4, y: 4 })).toBe(18);
   });
 });
