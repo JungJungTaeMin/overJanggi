@@ -182,19 +182,28 @@ export function resolveEndOfTurn(state: GameState, rngFn: RngFn, log: Resolution
   }
   respawnUnits(state, respawningNow, rngFn, log);
 
-  // 7) 점령 점수(5장): 생존 유닛(기절·구속 포함, 사망 제외) 기준 카운트
+  // 7) 점령 점수 — **다수결 점령, 턴당 최대 1점**. 생존 유닛(기절·구속 포함, 사망 제외)을
+  // 팀별로 세어 **인원이 더 많은 쪽이 1점**을 얻는다. 정확히 동수면 양 팀 모두 0점.
+  // 몇 명 더 많은지는 점수에 영향을 주지 않는다 — 3:1이든 5:1이든 똑같이 1점이다.
+  //
+  // 기획서 5장 원문은 "양 팀이 함께 있으면 무조건 경합 0점"이었는데, 그러면 양쪽이 점령지에
+  // 들어간 순간 아무도 점수를 못 내고 그 상태가 스스로 유지된다 — 200판 시뮬레이션에서 17.5%가
+  // 끝나지 않았고, 그 판들의 선두 팀 평균 점수는 300턴을 돌려도 10점 만점에 1.6점이었다.
+  // 느린 판이 아니라 완전 교착이라 기물 스탯으로는 풀 수 없었다.
+  //
+  // 승자 판정을 **인원수가 아니라 다수결**로 바꾸면 양쪽이 함께 있어도 병력을 더 밀어 넣을 이유가
+  // 생겨 교착이 풀린다. 상한이 1점이라 "이미 이기고 있는 점령지에 병력을 더 붓는" 보상은 없고,
+  // 과반만 잡으면 나머지 기물은 교전·수비로 돌리는 편이 낫다.
   const owners: Owner[] = ['p1', 'p2'];
   const counts: Record<Owner, number> = { p1: 0, p2: 0 };
   for (const unit of state.units) {
-    if (!unit.alive || !unit.position) continue;
+    if (!unit.alive || !unit.position || unit.isTurret) continue; // 포탑은 편성 기물이 아니라 점령에 안 센다
     if (isInCaptureZone(unit.position, state.board)) counts[unit.owner] += 1;
   }
   const [a, b] = owners;
-  if (counts[a] > 0 && counts[b] === 0) {
-    state.score[a] += counts[a] >= 2 ? 2 : 1;
-  } else if (counts[b] > 0 && counts[a] === 0) {
-    state.score[b] += counts[b] >= 2 ? 2 : 1;
-  } // 양쪽 모두 존재하면 경합 — 0점
+  if (counts[a] !== counts[b]) {
+    state.score[counts[a] > counts[b] ? a : b] += 1;
+  }
 
   log.push({ phase: 'endOfTurn', type: 'score', detail: { p1: state.score.p1, p2: state.score.p2, p1Count: counts.p1, p2Count: counts.p2 } });
 
