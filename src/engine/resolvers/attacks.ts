@@ -1,5 +1,6 @@
 import type { ActionPlan, Direction, GameState, Position, ResolutionEvent, UnitInstance, UnitTurnPlan } from '../types';
 import { getUnitType } from '../../data/unitTypes';
+import { resolvedAttackPower } from '../unitStats';
 import { ORTHOGONAL_DIRECTIONS, samePosition, step } from '../grid';
 import { frontBandCells, lineCells } from '../targeting';
 import { hasActiveEffect } from '../statusEffects';
@@ -85,7 +86,7 @@ export function resolveAttacks(
       });
     }
 
-    const attackPower = effectiveAttackPower(unit, turnNumber);
+    const attackPower = resolvedAttackPower(unit, turnNumber);
     const shape = typeDef.attackShape;
 
     if (shape.kind === 'aoe' && shape.aoeShape === 'line' && action.kind === 'attack') {
@@ -124,16 +125,6 @@ export function resolveAttacks(
       unit.cooldowns['basicAttack'] = typeDef.attackCooldownTurns;
     }
   }
-}
-
-function effectiveAttackPower(unit: UnitInstance, turnNumber: number): number {
-  const typeDef = getUnitType(unit.typeId);
-  if (unit.typeId === 'support3') {
-    const heads = hasActiveEffect(unit, 'coinHeads', turnNumber);
-    const payload = typeDef.passive?.payload ?? {};
-    return heads ? (payload.headsAttack ?? typeDef.attack) : (payload.tailsAttack ?? typeDef.attack);
-  }
-  return typeDef.attack;
 }
 
 function hasAdjacentAlly(target: UnitInstance, units: UnitInstance[]): boolean {

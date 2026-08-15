@@ -176,6 +176,11 @@ export const unitTypes: UnitTypeDef[] = [
     attackShape: { kind: 'line', range: 2, axis: 'orthogonal' },
     diagonalMove: false,
     canAttack: true,
+    // 회복량은 기획서 원문(1)이 아니라 3이다. 원문 수치는 `maxHp = 체력Lv × 2` 기준으로 쓰였는데,
+    // 구현에서 HP_MULTIPLIER를 5로 올리면서 체력만 2.5배가 되고 회복량은 그대로 남았다. 그 결과
+    // 공격 5~10 대 회복 1이 되어 힐이 사실상 아무것도 되돌리지 못했다 — 200판 시뮬레이션에서 지원
+    // 3종이 나란히 최하위(28~34%)였던 주된 원인이다. 체력과 같은 비율(×2.5, 반올림)로 맞춘다.
+    // support2 회복(3→8)과 포탑 오라(2→5)도 같은 이유로 같은 비율을 적용했다.
     skills: [
       {
         id: 'support1_aoe_heal',
@@ -183,11 +188,11 @@ export const unitTypes: UnitTypeDef[] = [
         effectCategory: 'heal',
         gate: { type: 'auto' },
         targeting: 'aoe',
-        payload: { radius: 2, healAmount: 1 },
+        payload: { radius: 2, healAmount: 3 },
       },
     ],
     // 턴 종료 시 자동 회복, 해당 턴에 힐을 사용했다면 자동회복량 2배
-    passive: { id: 'support1_auto_regen', description: '턴 종료 시 자동 회복. 해당 턴 회복량 2배', payload: { baseAmount: 1, healedThisTurnMultiplier: 2 } },
+    passive: { id: 'support1_auto_regen', description: '턴 종료 시 자동 회복. 해당 턴 회복량 2배', payload: { baseAmount: 3, healedThisTurnMultiplier: 2 } },
   },
   {
     id: 'support2',
@@ -206,7 +211,7 @@ export const unitTypes: UnitTypeDef[] = [
         effectCategory: 'heal',
         gate: { type: 'auto' },
         targeting: 'ally',
-        payload: { range: 4, healAmount: 3 },
+        payload: { range: 4, healAmount: 8 },
       },
       {
         id: 'support2_root',
@@ -222,10 +227,13 @@ export const unitTypes: UnitTypeDef[] = [
     id: 'support3',
     name: '지원 3 — 확률·포탑형',
     role: 'support',
-    moveSpeed: 0,
+    // 이동력·공격력은 매 턴 동전으로 정해진다(아래 passive) — 여기 값은 동전이 없을 때의 바닥값이다.
+    // 기획서에 사거리 수치가 없어 support1(직선 2)과 같은 근거리 지원 사거리를 기본값으로 둔다.
+    // 0으로 두면 공격력 6/4가 닿을 칸이 없어 영영 쓰이지 않는 죽은 값이 된다.
+    moveSpeed: 1,
     hpLv: 3,
-    attack: 0,
-    attackShape: { kind: 'line', range: 0, axis: 'orthogonal' },
+    attack: 4,
+    attackShape: { kind: 'line', range: 2, axis: 'orthogonal' },
     diagonalMove: false,
     canAttack: true,
     skills: [
@@ -261,7 +269,7 @@ export const turretType: UnitTypeDef = {
   canAttack: false,
   skills: [],
   isTurret: true,
-  passive: { id: 'turret_aura', description: '주변 8칸 아군 회복', payload: { healAmount: 2, radius: 1 } },
+  passive: { id: 'turret_aura', description: '주변 8칸 아군 회복', payload: { healAmount: 5, radius: 1 } },
 };
 
 export function getUnitType(typeId: string): UnitTypeDef {

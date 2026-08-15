@@ -2,6 +2,7 @@ import type { ActionPlan, GameState, ResolutionEvent } from './types';
 import type { RngFn } from './rng';
 import { computeTurnPriority } from './priority';
 import { sanitizePlan } from './validation';
+import { resolveTurnStart } from './resolvers/turnStart';
 import { resolveMovement } from './resolvers/movement';
 import { resolvePreAttack } from './resolvers/preAttack';
 import { resolveAttacks } from './resolvers/attacks';
@@ -33,6 +34,9 @@ export function resolveTurn(state: GameState, planP1: ActionPlan, planP2: Action
 
   const sanitizedP1 = sanitizeActionPlan(state, planP1);
   const sanitizedP2 = sanitizeActionPlan(state, planP2);
+
+  // support3의 동전은 이동력까지 바꾸고, 이전 포탑은 이동 경로를 막는다 — 둘 다 이동보다 먼저.
+  resolveTurnStart(state, sanitizedP1, sanitizedP2, rngFn, log);
 
   const movementOrder = computeTurnPriority(state.units, rngFn);
   log.push({ phase: 'priority', type: 'movementOrder', detail: { order: movementOrder } });

@@ -2,6 +2,7 @@ import type { BaseAction, BoardConfig, Direction, Position, SkillUse, UnitInstan
 import { getUnitType } from '../data/unitTypes';
 import { inBounds, isObstacle, step } from './grid';
 import { getRerouteInfo } from './moveReroute';
+import { plannedMoveSpeed } from './unitStats';
 
 /** 기본 행동 중 이동만 뽑은 타입. */
 export type MoveBaseAction = Extract<BaseAction, { kind: 'move' }>;
@@ -32,7 +33,7 @@ export function plannedMoveBonus(unit: UnitInstance, skillUse: SkillUse | undefi
   const skill = typeDef.skills.find((s) => s.id === skillUse.skillId);
   if (!skill || skill.effectCategory !== 'movement') return 0;
   if (skill.gate.type === 'charge') {
-    return plannedChargeUses(unit, skillUse) * typeDef.moveSpeed * (skill.payload.extraMoveMultiple ?? 1);
+    return plannedChargeUses(unit, skillUse) * plannedMoveSpeed(unit) * (skill.payload.extraMoveMultiple ?? 1);
   }
   const bonus = skill.payload.moveBonus ?? skill.payload.extraMove;
   return bonus ?? 0;
@@ -43,7 +44,7 @@ export function plannedMoveBonus(unit: UnitInstance, skillUse: SkillUse | undefi
  * 0번 구간은 기본 이동, 1번 구간부터는 기술을 n회 쓴 덕에 추가로 얻는 "이동 한 번"이다.
  */
 export function moveSegmentLength(unit: UnitInstance): number {
-  return Math.max(1, getUnitType(unit.typeId).moveSpeed);
+  return Math.max(1, plannedMoveSpeed(unit));
 }
 
 /**
@@ -100,7 +101,7 @@ export function planMoveCapacity(unit: UnitInstance, plan: UnitTurnPlan, carried
   // 기본 행동이 이동이 아니면 기본 이동 칸은 애초에 존재하지 않는다 — 아직 경로를 한 칸도 안 찍은
   // 상태에서도 상한이 "기술 몫"으로 보여야 UI가 12칸(3+9) 같은 잘못된 숫자를 안내하지 않는다.
   if (plan.baseAction.kind !== 'move') return bonus;
-  return Math.max(0, getUnitType(unit.typeId).moveSpeed + carriedBonus + bonus);
+  return Math.max(0, plannedMoveSpeed(unit) + carriedBonus + bonus);
 }
 
 /**
@@ -114,11 +115,10 @@ export function moveSegmentCapacities(
   skillUse: SkillUse | undefined,
   carriedBonus = 0,
 ): number[] {
-  const typeDef = getUnitType(unit.typeId);
   const uses = wholeExtraMoveUses(unit, skillUse);
   // 구간을 늘리지 않는 단순 가산 버프(+1 등)는 기본 구간 길이에 더한다.
   const flatBonus = uses > 0 ? 0 : plannedMoveBonus(unit, skillUse);
-  const base = Math.max(1, typeDef.moveSpeed + carriedBonus + flatBonus);
+  const base = Math.max(1, plannedMoveSpeed(unit) + carriedBonus + flatBonus);
   return [base, ...Array.from({ length: uses }, () => moveSegmentLength(unit))];
 }
 

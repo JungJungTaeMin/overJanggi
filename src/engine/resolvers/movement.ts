@@ -6,6 +6,7 @@ import { addStatusEffect, sumMagnitude } from '../statusEffects';
 import { killUnit } from '../death';
 import { applyDamage } from '../damage';
 import { isSkillOnlyMove, plannedChargeUses, resolveMovePath } from '../movePath';
+import { resolvedMoveSpeed } from '../unitStats';
 
 interface MoveIntent {
   unit: UnitInstance;
@@ -118,12 +119,12 @@ export function resolveMovement(
       if (unitPlan.baseAction.kind !== 'move' && !skillOnly) continue;
       const unit = state.units.find((u) => u.instanceId === instanceId);
       if (!unit || !unit.alive || !unit.position) continue;
-      const typeDef = getUnitType(unit.typeId);
       // tank1/tank2의 이동 버프는 위 1)에서 moveBonus 상태이상으로 반영됐고, dealer2 시간역행은
       // 이번 턴 한정이라 별도 맵에 담겨 있다 — 둘을 더해야 이번 턴 실제 이동 한계가 나온다.
       // 기술 이동만 하는 계획(기본 행동 = 공격)에는 기본 이동 몫이 없어 기술이 준 칸수가 전부다.
       const extra = rewindExtraMove.get(instanceId) ?? 0;
-      const cap = skillOnly ? extra : typeDef.moveSpeed + sumMagnitude(unit, 'moveBonus', turnNumber) + extra;
+      // 해결 단계이므로 이번 턴 동전 결과가 반영된 실제 이동력을 쓴다(support3 외에는 typeDef와 동일).
+      const cap = skillOnly ? extra : resolvedMoveSpeed(unit, turnNumber) + sumMagnitude(unit, 'moveBonus', turnNumber) + extra;
       intentsById.set(instanceId, {
         unit,
         path: resolveMovePath(unit, unitPlan, cap),

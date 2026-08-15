@@ -83,6 +83,8 @@ export interface UnitInstance {
   charges: Record<string, number>;
   statusEffects: StatusEffectInstance[];
   isTurret?: boolean;
+  /** 포탑을 세운 support3의 instanceId. 기물당 포탑 1기 규칙(preAttack.ts)을 위해 필요하다. */
+  summonerId?: string;
   /** dealer2 시간역행: 첫 사용 시점의 위치/체력 스냅샷 (충전 3회 소진 시 복귀) */
   rewindSnapshot?: { position: Position; hp: number } | null;
 }

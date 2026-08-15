@@ -8,16 +8,6 @@ import { createUnitInstance } from '../createInitialState';
 export function resolvePreAttack(state: GameState, planP1: ActionPlan, planP2: ActionPlan, log: ResolutionEvent[]): void {
   const turnNumber = state.turnNumber;
 
-  // support3: 턴 시작 시 동전 결정(매 턴 자동, 스킬 사용 여부와 무관)
-  for (const unit of state.units) {
-    if (unit.typeId !== 'support3' || !unit.alive) continue;
-    const typeDef = getUnitType('support3');
-    const chance = typeDef.passive?.payload?.headsChance ?? 0.5;
-    const heads = Math.random() < chance;
-    addStatusEffect(unit, heads ? 'coinHeads' : 'coinTails', turnNumber, unit.instanceId);
-    log.push({ phase: 'preAttack', type: 'coinFlip', actorId: unit.instanceId, detail: { heads } });
-  }
-
   for (const plan of [planP1, planP2]) {
     for (const [instanceId, unitPlan] of Object.entries(plan.actions)) {
       if (!unitPlan.skillUse) continue;
@@ -51,7 +41,9 @@ export function resolvePreAttack(state: GameState, planP1: ActionPlan, planP2: A
           const cell = step(unit.position, frontDir);
           const occupied = state.units.some((u) => u.alive && u.position && samePosition(u.position, cell));
           if (!occupied) {
+            // 기물당 포탑은 1기 — 이전 포탑은 이미 턴 시작 단계(turnStart.ts)에서 철거됐다.
             const turret = createUnitInstance('turret', unit.owner, cell);
+            turret.summonerId = unit.instanceId;
             state.units.push(turret);
             log.push({ phase: 'preAttack', type: 'turretSpawn', actorId: unit.instanceId, detail: { at: cell } });
           }

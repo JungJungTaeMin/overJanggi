@@ -22,6 +22,8 @@ import { frontBandCells, lineCells } from '../engine/targeting';
 import { hasActiveEffect, sumMagnitude } from '../engine/statusEffects';
 import { isActionLegal, sanitizePlan } from '../engine/validation';
 import { staticRunLimit } from '../engine/movePath';
+// 동전은 해결 단계에서 굴러가므로 계획 시점에는 결과를 알 수 없다 — AI도 앞면 기준(최대치)으로 본다.
+import { plannedAttackPower, plannedMoveSpeed } from '../engine/unitStats';
 import type { RngFn } from '../engine/rng';
 import { ROSTER_SIZE } from '../data/constants';
 import { DIFFICULTY_PROFILES, type AiDifficulty, type DifficultyProfile } from './difficulty';
@@ -72,16 +74,6 @@ function occupantAt(state: GameState, p: Position, excludeId?: string): UnitInst
   return state.units.find((u) => u.alive && u.instanceId !== excludeId && u.position && samePosition(u.position, p));
 }
 
-/** 이 기물의 이번 턴 실제 공격력(support3은 동전 결과에 따라 달라진다 — attacks.ts와 같은 규칙). */
-function effectiveAttack(unit: UnitInstance, turnNumber: number): number {
-  const typeDef = getUnitType(unit.typeId);
-  if (unit.typeId === 'support3') {
-    const payload = typeDef.passive?.payload ?? {};
-    return hasActiveEffect(unit, 'coinHeads', turnNumber) ? payload.headsAttack ?? typeDef.attack : payload.tailsAttack ?? typeDef.attack;
-  }
-  return typeDef.attack;
-}
-
 function adjacentAllyOf(target: UnitInstance, units: UnitInstance[]): boolean {
   if (!target.position) return false;
   return ORTHOGONAL_DIRECTIONS.some((dir) => {
@@ -113,7 +105,7 @@ function attackValue(
   profile: DifficultyProfile,
 ): number {
   const typeDef = getUnitType(unit.typeId);
-  const power = effectiveAttack(unit, state.turnNumber);
+  const power = plannedAttackPower(unit);
   const shape = typeDef.attackShape;
 
   if (shape.kind === 'aoe' && shape.aoeShape === 'line') {
@@ -145,8 +137,8 @@ function threatAt(state: GameState, unit: UnitInstance, dest: Position): number 
   for (const enemy of livingUnits(state, unit.owner === 'p1' ? 'p2' : 'p1')) {
     const typeDef = getUnitType(enemy.typeId);
     if (!typeDef.canAttack) continue;
-    const reach = typeDef.attackShape.range + typeDef.moveSpeed;
-    if (chebyshev(dest, enemy.position!) <= reach) threat += effectiveAttack(enemy, state.turnNumber);
+    const reach = typeDef.attackShape.range + plannedMoveSpeed(unit);
+    if (chebyshev(dest, enemy.position!) <= reach) threat += plannedAttackPower(enemy);
   }
   return threat;
 }
@@ -248,7 +240,7 @@ function generateCandidates(state: GameState, unit: UnitInstance, profile: Diffi
   /** 이번 턴 이동 후보(방향 × 칸수). dealer3은 공격 모드가 켜져 있으면 이동 자체가 불법이다. */
   const moveCandidates: { action: BaseAction; dest: Position }[] = [];
   if (!rooted && !(unit.typeId === 'dealer3' && attackModeOn)) {
-    const cap = typeDef.moveSpeed + carriedMoveBonus;
+    const cap = plannedMoveSpeed(unit) + carriedMoveBonus;
     for (const dir of moveDirections(unit)) {
       const { cells } = walkLine(state, unit, dir, cap, false);
       cells.forEach((dest, i) => moveCandidates.push({ action: moveAction(dir, i + 1), dest }));
@@ -276,7 +268,7 @@ function generateCandidates(state: GameState, unit: UnitInstance, profile: Diffi
       }
     }
     if (!rooted) {
-      const cap = typeDef.moveSpeed + carriedMoveBonus + 1;
+      const cap = plannedMoveSpeed(unit) + carriedMoveBonus + 1;
       for (const dir of moveDirections(unit)) {
         const { cells } = walkLine(state, unit, dir, cap, false);
         cells.forEach((dest, i) => push({ baseAction: moveAction(dir, i + 1), skillUse: fortify }, dest, worth));
@@ -287,7 +279,7 @@ function generateCandidates(state: GameState, unit: UnitInstance, profile: Diffi
   // tank2 돌진: 이동 +1 + 경로의 적을 밟고 지나가며 이동 칸수만큼 피해. 방향별로 **끝까지** 달리는 수만 본다
   // (돌진 피해는 이동 칸수에 비례하므로 중간에 멈추는 건 거의 항상 손해다).
   if (unit.typeId === 'tank2' && skillReady('tank2_charge') && !rooted) {
-    const cap = typeDef.moveSpeed + carriedMoveBonus + 1;
+    const cap = plannedMoveSpeed(unit) + carriedMoveBonus + 1;
     for (const dir of moveDirections(unit)) {
       const { cells, trampled } = walkLine(state, unit, dir, cap, true);
       if (cells.length === 0) continue;
@@ -325,12 +317,12 @@ function generateCandidates(state: GameState, unit: UnitInstance, profile: Diffi
   // dealer2 추가 이동: 충전 1개 = 이동 한 번 더. **충전을 0으로 만들면 첫 사용 지점으로 되감기**되므로
   // 마지막 한 개는 남겨 둔다(되감기를 전술로 쓰는 건 사람 몫).
   if (unit.typeId === 'dealer2' && !rooted && (unit.charges['dealer2_rewind_move'] ?? 0) >= 2) {
-    const baseCap = typeDef.moveSpeed + carriedMoveBonus;
+    const baseCap = plannedMoveSpeed(unit) + carriedMoveBonus;
     for (const dir of moveDirections(unit)) {
       const first = staticRunLimit(here, dir, baseCap, state.board);
       let origin = here;
       for (let i = 0; i < first; i++) origin = step(origin, dir);
-      const second = staticRunLimit(origin, dir, typeDef.moveSpeed, state.board);
+      const second = staticRunLimit(origin, dir, plannedMoveSpeed(unit), state.board);
       if (second <= 0) continue;
       const { cells } = walkLine(state, unit, dir, first + second, false);
       if (cells.length === 0) continue;
@@ -355,7 +347,7 @@ function generateCandidates(state: GameState, unit: UnitInstance, profile: Diffi
       push({ baseAction: { kind: 'none' }, skillUse: toggle }, here, -2);
       if (!rooted) {
         for (const dir of moveDirections(unit)) {
-          const { cells } = walkLine(state, unit, dir, typeDef.moveSpeed + carriedMoveBonus, false);
+          const { cells } = walkLine(state, unit, dir, plannedMoveSpeed(unit) + carriedMoveBonus, false);
           cells.forEach((dest, i) => push({ baseAction: moveAction(dir, i + 1), skillUse: toggle }, dest, -2));
         }
       }
@@ -396,11 +388,35 @@ function generateCandidates(state: GameState, unit: UnitInstance, profile: Diffi
   }
 
   // support3 포탑: 앞칸(적 진영 방향)이 비어 있으면 매 턴 세운다 — 주변 8칸 아군을 계속 회복한다.
+  // 포탑은 이동이 끝난 뒤(2단계) 도착 칸 앞에 서므로 이동과 함께 계획할 수 있다. 제자리 버전만
+  // 후보로 내면 포탑 점수(+6)가 위치 점수를 항상 눌러서 이 기물이 시작지점에 영원히 붙어 있게 된다.
   if (unit.typeId === 'support3') {
     const forward: Direction = unit.owner === 'p1' ? 'down' : 'up';
-    const cell = step(here, forward);
-    if (inBounds(cell, state.board) && !isObstacle(cell, state.board) && !occupantAt(state, cell, unit.instanceId)) {
-      push({ baseAction: { kind: 'none' }, skillUse: { skillId: 'support3_turret', target: forward } }, here, 6);
+    const turret = { skillId: 'support3_turret', target: forward };
+    // 포탑을 새로 세우는 계획이면 **직전 포탑은 이동 전에 철거된다**(turnStart.ts). 그러니 경로와
+    // 설치 칸을 볼 때는 자기 포탑을 없는 셈 쳐야 한다. 그러지 않으면 바로 앞칸에 서 있는 자기
+    // 포탑이 전진을 막는 것으로 보여, 옆으로만 오가며 점령지에 영영 못 들어간다(실측: 점령 체류 0).
+    const stateWithoutMyTurret: GameState = {
+      ...state,
+      units: state.units.filter((u) => !(u.isTurret && u.summonerId === unit.instanceId)),
+    };
+    const canPlaceAt = (from: Position) => {
+      const cell = step(from, forward);
+      return (
+        inBounds(cell, state.board) &&
+        !isObstacle(cell, state.board) &&
+        !occupantAt(stateWithoutMyTurret, cell, unit.instanceId)
+      );
+    };
+    if (canPlaceAt(here)) push({ baseAction: { kind: 'none' }, skillUse: turret }, here, 6);
+    if (!rooted) {
+      const cap = plannedMoveSpeed(unit) + carriedMoveBonus;
+      for (const dir of moveDirections(unit)) {
+        const { cells } = walkLine(stateWithoutMyTurret, unit, dir, cap, false);
+        cells.forEach((dest, i) => {
+          if (canPlaceAt(dest)) push({ baseAction: moveAction(dir, i + 1), skillUse: turret }, dest, 6);
+        });
+      }
     }
   }
 
