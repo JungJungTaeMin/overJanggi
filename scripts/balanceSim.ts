@@ -8,26 +8,36 @@
  * 방법: 양쪽 모두 같은 난이도의 AI가 무작위 5기물 편성으로 붙는다. 편성이 무작위이므로
  * 특정 기물이 "들어간 판의 승률"이 그 기물의 실제 값어치에 대한 추정치가 된다(팀 단위 기여도).
  *
- * 실행: npx vite-node scripts/balanceSim.ts [게임수] [난이도] [최대턴] [탱커수]
+ * 실행: npx vite-node scripts/balanceSim.ts [게임수] [난이도] [최대턴] [탱커수] [맵] [기준맵] [--기준편성=free|N]
  */
+import { readFileSync, writeFileSync } from 'node:fs';
 import { createInitialState } from '../src/engine/createInitialState';
 import { resolveTurn } from '../src/engine/resolveTurn';
 import { aiActionPlan, aiPlacement } from '../src/ai/aiPlayer';
 import { seededRng } from '../src/engine/rng';
-import { mapDefinition } from '../src/data/mapDefinitions';
 import { unitTypes } from '../src/data/unitTypes';
 import { ROSTER_SIZE, WIN_SCORE } from '../src/data/constants';
+import { validateMap } from '../src/maps/mapModel';
+import { loadBoard, renderBoard } from './loadMap';
 import type { AiDifficulty } from '../src/ai/difficulty';
 import type { Owner } from '../src/engine/types';
 
-const GAMES = Number(process.argv[2] ?? 300);
-const DIFFICULTY = (process.argv[3] ?? 'hard') as AiDifficulty;
+/**
+ * 위치 인자와 `--이름=값` 플래그를 갈라 놓는다. 섞어 두면 플래그를 앞에 쓴 순간 그 자리의 위치
+ * 인자로 잘못 읽혀(예: `--기준편성=free`가 '기준 맵'이 된다) 엉뚱한 기록과 비교한 표가 나온다.
+ */
+const ARGV = process.argv.slice(2);
+const POSITIONAL = ARGV.filter((a) => !a.startsWith('--'));
+const flag = (name: string) => ARGV.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
+
+const GAMES = Number(POSITIONAL[0] ?? 300);
+const DIFFICULTY = (POSITIONAL[1] ?? 'hard') as AiDifficulty;
 /**
  * 판을 끊는 지점. 게임 자체에는 턴 제한이 없으므로(교착 규칙은 기획서 10장 미정) 이건 순전히
  * 측정용 장치다. 여기서 끊긴 판을 무승부로 세는 탓에 상한을 낮게 잡으면 "느린 편성"이 "약한 편성"으로
  * 잘못 보인다 — 그래서 인자로 뺐다.
  */
-const MAX_TURNS = Number(process.argv[4] ?? 80);
+const MAX_TURNS = Number(POSITIONAL[2] ?? 80);
 /**
  * 편성에 넣을 탱커 수를 강제한다. `free`(기본)면 제약 없이 10종에서 균등 추첨 — 이때 탱커는
  * 이항분포로 0~5명이 섞이고 기대값이 1.5명이다.
@@ -37,10 +47,48 @@ const MAX_TURNS = Number(process.argv[4] ?? 80);
  * 기물인데, 그 전제가 사라지면 같은 스탯이어도 다른 기물이 된다. 스탯을 건드리지 않고 규칙만
  * 바꿔서 재는 게 목적이므로 유닛 데이터가 아니라 시뮬레이터 인자로 뺀다.
  */
-const TANK_QUOTA = process.argv[5] === undefined || process.argv[5] === 'free' ? null : Number(process.argv[5]);
+const TANK_QUOTA = POSITIONAL[3] === undefined || POSITIONAL[3] === 'free' ? null : Number(POSITIONAL[3]);
+/**
+ * 잴 맵. 기본은 '정원'(기본 맵)이다.
+ *
+ * 왜 맵을 바꿔 가며 재는가: 기물의 값어치는 스탯만으로 정해지지 않는다. 사거리 6짜리 장거리
+ * 화력형은 탁 트인 맵에서와 엄폐물이 촘촘한 맵에서 전혀 다른 기물이고, 이동 4짜리 돌진형은
+ * 진입로가 좁으면 갈 곳이 없다. 그래서 "이 기물이 세다"가 아니라 "이 맵에서 이 기물이 세다"가
+ * 실제로 말이 되는 단위다.
+ */
+const MAP_ARG = POSITIONAL[4] ?? 'garden';
+/**
+ * 증감을 어느 기록과 비교할지. 비워 두면 **같은 설정·같은 맵의 직전 측정**과 비교한다 — 규칙이나
+ * 스탯을 만졌을 때 그 변경이 무엇을 했는지 보는 기본 용도다.
+ *
+ * 여기에 다른 맵(예: 'garden')을 주면 그 맵의 기록과 비교한다. "이 맵이 누구에게 유리한가"는
+ * 같은 맵을 두 번 돌려서는 알 수 없고 다른 맵과 견줘야 나오기 때문이다. 둘을 한 인자로 뭉뚱그리면
+ * 표에 찍힌 증감이 '변경 전 대비'인지 '다른 맵 대비'인지 읽는 사람이 알 수 없게 된다.
+ */
+const BASE_MAP_ARG = POSITIONAL[5];
+/**
+ * 증감을 **다른 편성 규칙**의 기록과 비교한다. `--기준편성=free`처럼 준다.
+ *
+ * BASE_MAP_ARG과 같은 이유로 필요하다. "탱커 1명 제한이 누구에게 유리한가"는 탱커 1명끼리 두 번
+ * 돌려서는 알 수 없고 자유 편성과 견줘야 나온다 — 그런데 기록은 편성 규칙별로 나뉘어 저장되므로
+ * (규칙이 다르면 애초에 비교 대상이 아니라는 게 기본값이다) 규칙을 넘나드는 비교는 여기서
+ * 명시적으로 열어 줘야 한다. 이름 있는 플래그로 둔 이유는 위치 인자가 이미 여섯 개라, 일곱
+ * 번째·여덟 번째를 순서로 외우게 만들면 읽는 쪽이 무엇과 비교한 표인지 알 수 없게 되기 때문이다.
+ */
+const BASE_RULE_ARG = flag('기준편성');
 
 const TANKS = unitTypes.filter((t) => t.role === 'tank');
 const NON_TANKS = unitTypes.filter((t) => t.role !== 'tank');
+
+const { name: mapName, board } = loadBoard(MAP_ARG);
+// 저장 버튼이 쓰는 것과 **같은 검사**를 통과해야 한다. 실제로 대전에 못 쓰는 맵의 밸런스를
+// 재 봐야 그 숫자를 적용할 데가 없다.
+const mapErrors = validateMap(board);
+if (mapErrors.length > 0) {
+  console.error(`\n맵 검사 실패 — 이 맵은 대전에 쓸 수 없습니다:`);
+  mapErrors.forEach((e) => console.error(`  · ${e}`));
+  process.exit(1);
+}
 
 interface Stat {
   games: number;
@@ -90,9 +138,9 @@ for (let game = 0; game < GAMES; game++) {
   const state = createInitialState(
     rosters.p1,
     rosters.p2,
-    aiPlacement(rosters.p1, 'p1', mapDefinition, rng),
-    aiPlacement(rosters.p2, 'p2', mapDefinition, rng),
-    mapDefinition,
+    aiPlacement(rosters.p1, 'p1', board, rng),
+    aiPlacement(rosters.p2, 'p2', board, rng),
+    board,
   );
 
   // 한 판 안에서 인스턴스 → 기물 종류를 되짚기 위한 표.
@@ -169,15 +217,85 @@ const rows = [...stats.entries()]
   }))
   .sort((a, b) => b.points - a.points);
 
-const rule = TANK_QUOTA === null ? '자유 편성' : `탱커 ${TANK_QUOTA}명 고정`;
-console.log(`\n=== ${GAMES}판 · 난이도 ${DIFFICULTY} · 최대 ${MAX_TURNS}턴 · ${rule} ===`);
-console.log(`p1 ${p1Wins}승 / p2 ${p2Wins}승 / 무승부 ${draws} · 평균 ${(totalTurns / GAMES).toFixed(1)}턴\n`);
-console.log('기물             편성판수  승점률    승률   무승부   판당피해  판당회복  판당사망  점령체류');
-for (const r of rows) {
-  console.log(
-    `${r.name.padEnd(14)} ${String(r.games).padStart(6)} ${r.points.toFixed(1).padStart(7)}% ${r.winRate.toFixed(1).padStart(6)}% ${r.drawRate.toFixed(1).padStart(6)}% ${r.dmg.toFixed(1).padStart(9)} ${r.heal.toFixed(1).padStart(9)} ${r.deaths.toFixed(2).padStart(9)} ${r.zone.toFixed(1).padStart(9)}`,
-  );
+/** 편성 규칙의 표시 이름. 기록 키에도 그대로 쓰이므로 이 함수가 유일한 근거여야 한다. */
+const ruleLabel = (quota: number | null) => (quota === null ? '자유 편성' : `탱커 ${quota}명 고정`);
+const rule = ruleLabel(TANK_QUOTA);
+const baseRule = BASE_RULE_ARG === undefined ? rule : ruleLabel(BASE_RULE_ARG === 'free' ? null : Number(BASE_RULE_ARG));
+const isGarden = MAP_ARG === 'garden';
+const baseSnapshot = readAll()[keyForMap(BASE_MAP_ARG ?? MAP_ARG, baseRule)] ?? null;
+const prev = baseSnapshot?.points;
+
+console.log(`\n=== ${GAMES}판 · 난이도 ${DIFFICULTY} · 최대 ${MAX_TURNS}턴 · ${rule} · 맵 ${mapName} ===`);
+if (!isGarden) console.log(renderBoard(board));
+console.log(`p1 ${p1Wins}승 / p2 ${p2Wins}승 / 무승부 ${draws} · 평균 ${(totalTurns / GAMES).toFixed(1)}턴`);
+if (baseSnapshot) {
+  // 무엇과 견준 표인지 한 줄로 못박는다 — 맵이 다른지 편성 규칙이 다른지 모르면 증감은 읽을 수 없다.
+  const differs = [
+    BASE_MAP_ARG === undefined ? null : `맵 '${BASE_MAP_ARG}'`,
+    baseRule === rule ? null : `${baseRule}`,
+  ].filter(Boolean);
+  const what = differs.length === 0 ? '같은 맵의 직전 측정' : differs.join(' · ');
+  console.log(`증감은 ${what}(${baseSnapshot.label}) 대비다.`);
+} else {
+  console.log('비교할 기록이 없어 증감을 낼 수 없다(이번 결과가 다음 실행의 기준선이 된다).');
 }
+console.log('\n순위 기물             편성판수  승점률   증감      승률   무승부   판당피해  판당회복  판당사망  점령체류');
+rows.forEach((r, i) => {
+  const before = prev?.[r.id];
+  const delta = before === undefined ? null : r.points - before;
+  // ±0.05%p 미만은 반올림 잡음이라 화살표를 안 붙인다. 표본이 400~500판이면 기물당 표준오차가
+  // 2.5%p 안팎이므로, 화살표는 "움직였다"는 표시일 뿐 그 자체로 유의성은 아니다.
+  const mark = delta === null ? ' ' : delta > 0.05 ? '▲' : delta < -0.05 ? '▼' : '·';
+  const deltaText = delta === null ? '   —   ' : `${mark}${(delta >= 0 ? '+' : '') + delta.toFixed(1)}%p`;
+  console.log(
+    `${String(i + 1).padStart(3)}. ${r.name.padEnd(14)} ${String(r.games).padStart(6)} ${r.points.toFixed(1).padStart(7)}% ${deltaText.padStart(9)} ${r.winRate.toFixed(1).padStart(6)}% ${r.drawRate.toFixed(1).padStart(6)}% ${r.dmg.toFixed(1).padStart(9)} ${r.heal.toFixed(1).padStart(9)} ${r.deaths.toFixed(2).padStart(9)} ${r.zone.toFixed(1).padStart(9)}`,
+  );
+});
+
+const spread = rows[0].points - rows[rows.length - 1].points;
+const prevSpread = prev ? Math.max(...Object.values(prev)) - Math.min(...Object.values(prev)) : null;
+console.log(
+  `\n전체편차(1위−10위) ${spread.toFixed(1)}%p` +
+    (prevSpread === null ? '' : ` · 직전 ${prevSpread.toFixed(1)}%p → ${(spread - prevSpread >= 0 ? '+' : '') + (spread - prevSpread).toFixed(1)}%p`),
+);
+saveSnapshot();
+/**
+ * 직전 측정을 파일에 남겨 다음 실행이 자동으로 증감을 낼 수 있게 한다.
+ *
+ * 난이도·편성 규칙이 다르면 애초에 비교 대상이 아니므로 그 조합을 키로 나눠 저장한다. 판수는
+ * 키에 넣지 않는다 — 판수만 다른 같은 설정끼리는 비교가 유효하고(표본이 늘 뿐이다), 넣으면
+ * 판수를 조금만 바꿔도 기준선이 사라져 버린다.
+ */
+function snapshotPath(): string {
+  return new URL('./.balanceSnapshots.json', import.meta.url).pathname;
+}
+/** 기본 맵 키에는 맵 이름을 붙이지 않는다 — 맵 인자가 생기기 전에 쌓아 둔 기록과 계속 이어지게. */
+function keyForMap(mapArg: string, ruleName: string = rule): string {
+  const base = `${DIFFICULTY}/${ruleName}/${MAX_TURNS}턴`;
+  return mapArg === 'garden' ? base : `${base}/맵 ${loadBoard(mapArg).name}`;
+}
+function snapshotKey(): string {
+  return keyForMap(MAP_ARG);
+}
+function readAll(): Record<string, { label: string; points: Record<string, number> }> {
+  try {
+    return JSON.parse(readFileSync(snapshotPath(), 'utf8'));
+  } catch {
+    return {};
+  }
+}
+function loadSnapshot(): { label: string; points: Record<string, number> } | null {
+  return readAll()[snapshotKey()] ?? null;
+}
+function saveSnapshot(): void {
+  const all = readAll();
+  all[snapshotKey()] = {
+    label: `${new Date().toISOString().slice(0, 10)} · ${GAMES}판`,
+    points: Object.fromEntries(rows.map((r) => [r.id, Number(r.points.toFixed(2))])),
+  };
+  writeFileSync(snapshotPath(), JSON.stringify(all, null, 2) + '\n');
+}
+
 if (drawScores.length > 0) {
   const avg = drawScores.reduce((a, b) => a + b, 0) / drawScores.length;
   console.log(`\n무승부 ${drawScores.length}판의 최고 점수 평균 ${avg.toFixed(1)} / ${WIN_SCORE}`);

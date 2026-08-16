@@ -1,0 +1,107 @@
+{
+  "hard/자유 편성/80턴": {
+    "label": "2026-08-16 · 1000판",
+    "points": {
+      "dealer4": 60.73,
+      "tank2": 54.28,
+      "dealer3": 52.03,
+      "dealer2": 50.87,
+      "dealer1": 50.13,
+      "support1": 48.89,
+      "tank3": 48.12,
+      "support2": 47,
+      "tank1": 46.12,
+      "support3": 45.55
+    }
+  },
+  "normal/자유 편성/80턴": {
+    "label": "2026-08-15 · 500판",
+    "points": {
+      "dealer4": 61.67,
+      "dealer2": 58.63,
+      "tank2": 54.59,
+      "support1": 49.87,
+      "support3": 49.48,
+      "tank1": 47.27,
+      "support2": 45.89,
+      "tank3": 45.74,
+      "dealer1": 45.34,
+      "dealer3": 39.67
+    }
+  },
+  "hard/자유 편성/80턴/맵 scripts/maps/test1-geojeom2.txt": {
+    "label": "2026-08-16 · 1000판",
+    "points": {
+      "dealer4": 56.26,
+      "tank2": 55.21,
+      "tank3": 53.27,
+      "dealer2": 51.94,
+      "tank1": 50.24,
+      "support3": 49.02,
+      "dealer3": 47.49,
+      "dealer1": 47.45,
+      "support1": 47.42,
+      "support2": 43.95
+    }
+  },
+  "hard/자유 편성/80턴/맵 scripts/maps/test1-nostray.txt": {
+    "label": "2026-08-15 · 1000판",
+    "points": {
+      "dealer4": 60.13,
+      "tank2": 57.51,
+      "dealer2": 52.68,
+      "tank3": 50.55,
+      "dealer1": 49.17,
+      "support3": 48.78,
+      "tank1": 48.21,
+      "support1": 45.63,
+      "support2": 44.13,
+      "dealer3": 43.07
+    }
+  },
+  "hard/자유 편성/200턴/맵 scripts/maps/test1-geojeom2.txt": {
+    "label": "2026-08-16 · 1000판",
+    "points": {
+      "dealer4": 57.21,
+      "tank2": 54.03,
+      "tank3": 53.33,
+      "dealer2": 50.87,
+      "tank1": 50.48,
+      "support3": 50.06,
+      "dealer1": 49.94,
+      "support1": 47.91,
+      "support2": 44.76,
+      "dealer3": 43.25
+    }
+  },
+  "hard/탱커 1명 고정/80턴/맵 scripts/maps/test1-geojeom2.txt": {
+    "label": "2026-08-16 · 1000판",
+    "points": {
+      "dealer4": 57.52,
+      "tank2": 54.15,
+      "tank3": 53.11,
+      "dealer2": 52.72,
+      "support1": 49.51,
+      "dealer1": 49.07,
+      "dealer3": 48.63,
+      "support3": 48.1,
+      "support2": 46.79,
+      "tank1": 42.75
+    }
+  },
+  "hard/탱커 1명 고정/80턴": {
+    "label": "2026-08-16 · 1000판",
+    "points": {
+      "dealer4": 62.5,
+      "dealer2": 53.55,
+      "tank2": 53.42,
+      "dealer3": 52.59,
+      "support1": 49.18,
+      "tank3": 48.52,
+      "tank1": 47.91,
+      "support2": 46.35,
+      "dealer1": 45.36,
+      "support3": 43.54
+    }
+  }
+}
