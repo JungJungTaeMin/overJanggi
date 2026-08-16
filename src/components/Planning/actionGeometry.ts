@@ -1,7 +1,7 @@
 import type { BaseAction, BoardConfig, Direction, Position, SkillMove, SkillUse, UnitInstance, UnitTurnPlan } from '../../engine/types';
 import { getUnitType } from '../../data/unitTypes';
 import { ORTHOGONAL_DIRECTIONS, DIAGONAL_DIRECTIONS, reachableSteps, samePosition, step, isWalkable } from '../../engine/grid';
-import { lineCells, frontBandCells } from '../../engine/targeting';
+import { attackRangeFor, lineCells, frontBandCells } from '../../engine/targeting';
 import {
   isSkillOnlyMove,
   moveSegmentCapacities,
@@ -263,7 +263,7 @@ export function computeAttackOptions(
     const cells =
       typeDef.attackShape.kind === 'aoe' && typeDef.attackShape.aoeShape === 'line'
         ? frontBandCells(origin, dir, board)
-        : lineCells(origin, dir, typeDef.attackShape.range, board);
+        : lineCells(origin, dir, attackRangeFor(typeDef.attackShape, dir), board);
     cells.forEach((position) => options.push({ position, direction: dir }));
   }
   return options;

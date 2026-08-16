@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { DIFFICULTY_ORDER, DIFFICULTY_PROFILES } from '../../ai/difficulty';
 import { hostRoom, joinRoom, leaveOnline } from '../../online/netBridge';
+import { MapPicker } from '../MapMaker/MapPicker';
 
 /**
  * 시작 화면 — 무엇을 상대할지 고른다.
@@ -30,6 +31,10 @@ export function ModeMenu() {
 
   return (
     <div className="mode-menu">
+      {/* 맵을 맨 위에 둔다 — 모드 버튼을 누르면 곧바로 드래프트로 넘어가므로, 아래에 있으면
+          맵을 고르기 전에 판이 시작돼 버린다. */}
+      <MapPicker />
+
       <section className="mode-card">
         <h2>로컬 대전</h2>
         <p>한 화면에서 두 사람이 번갈아 계획을 세웁니다. 양쪽 계획이 모두 보이는 디버그 모드입니다.</p>

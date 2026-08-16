@@ -1,4 +1,4 @@
-import type { BoardConfig, Direction, Position, UnitInstance } from './types';
+import type { BoardConfig, Direction, HealPack, Position, UnitInstance } from './types';
 
 export const DIRECTION_DELTA: Record<Direction, Position> = {
   up: { x: 0, y: -1 },
@@ -32,6 +32,11 @@ export function isObstacle(p: Position, board: BoardConfig): boolean {
 
 export function isInCaptureZone(p: Position, board: BoardConfig): boolean {
   return board.captureZone.some((c) => samePosition(c, p));
+}
+
+/** 그 칸에 힐팩이 놓여 있는지(비어 있는 상태인지는 별개 — GameState.healPackTimers가 판정한다). */
+export function healPackAt(p: Position, board: BoardConfig): HealPack | undefined {
+  return board.healPacks?.find((h) => samePosition(h.position, p));
 }
 
 export function unitAt(p: Position, units: UnitInstance[]): UnitInstance | undefined {

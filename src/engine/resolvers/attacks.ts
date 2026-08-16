@@ -2,7 +2,7 @@ import type { ActionPlan, Direction, GameState, Position, ResolutionEvent, UnitI
 import { getUnitType } from '../../data/unitTypes';
 import { resolvedAttackPower } from '../unitStats';
 import { ORTHOGONAL_DIRECTIONS, samePosition, step } from '../grid';
-import { frontBandCells, lineCells } from '../targeting';
+import { attackRangeFor, frontBandCells, lineCells } from '../targeting';
 import { hasActiveEffect } from '../statusEffects';
 import { applyDamage } from '../damage';
 import { killUnit } from '../death';
@@ -100,7 +100,8 @@ export function resolveAttacks(
         if (occupant.currentHp <= 0 && occupant.alive) killUnit(occupant, log);
       }
     } else if (shape.kind === 'line' && action.kind === 'attack') {
-      const cells = lineCells(unit.position, action.direction, shape.range, state.board);
+      // 사거리는 방향마다 다를 수 있다(dealer3: 직선 4 · 대각 1) — attackRangeFor가 단일 근거다.
+      const cells = lineCells(unit.position, action.direction, attackRangeFor(shape, action.direction), state.board);
       for (const cell of cells) {
         const occupant = state.units.find((u) => u.alive && u.position && samePosition(u.position, cell));
         if (!occupant) continue;
@@ -110,19 +111,37 @@ export function resolveAttacks(
           break;
         }
         let amount = attackPower;
-        if (unit.typeId === 'dealer4' && hasAdjacentAlly(occupant, state.units)) {
-          amount += typeDef.passive?.payload?.bonusDamage ?? 0;
-        }
+        // 측면 교란(dealer4): 대상이 자기 아군과 인접해 있으면 추가 피해. 조건 충족 여부를 로그에
+        // 남긴다 — 이게 없으면 피해 숫자만 보고 보너스가 터졌는지 되짚을 수 없고(버프까지 얹히면
+        // 더더욱), 실제로 "조건부 패시브가 사실상 상시인지"를 재려다 이게 막혀 로그부터 고쳤다.
+        const flank = unit.typeId === 'dealer4' && hasAdjacentAlly(occupant, state.units);
+        if (flank) amount += typeDef.passive?.payload?.bonusDamage ?? 0;
         applyDamage(occupant, amount);
-        log.push({ phase: 'attack', type: 'hit', actorId: unit.instanceId, targetId: occupant.instanceId, detail: { damage: amount } });
+        log.push({
+          phase: 'attack',
+          type: 'hit',
+          actorId: unit.instanceId,
+          targetId: occupant.instanceId,
+          detail: { damage: amount, ...(unit.typeId === 'dealer4' ? { flank } : {}) },
+        });
         if (occupant.currentHp <= 0 && occupant.alive) killUnit(occupant, log);
         break; // 직선 공격은 처음 만난 적 1명만 대상으로 한다
       }
       // 사거리 안에 적이 없어도 공격 행동 자체는 정상 해결(3.4절) — 별도 처리 불필요
     }
 
-    if (typeDef.attackCooldownTurns) {
-      unit.cooldowns['basicAttack'] = typeDef.attackCooldownTurns;
+    // 탄창식 기본 공격(딜러1): attackShots발을 연속으로 쏜 뒤에만 쉰다. 쏜 횟수는 charges에 센다
+    // — 부활 시 charges가 initCharges로 초기화되므로(endOfTurn) 되살아난 기물은 탄창이 꽉 찬 상태다.
+    if (typeDef.attackRestTurns) {
+      const magazine = typeDef.attackShots ?? 1;
+      const fired = (unit.charges['basicAttack'] ?? 0) + 1;
+      if (fired >= magazine) {
+        // +1인 이유: 이 턴 끝에서 쿨다운이 곧바로 1 깎인다(endOfTurn 4번). 한 턴을 쉬게 하려면 2를 넣어야 한다.
+        unit.cooldowns['basicAttack'] = typeDef.attackRestTurns + 1;
+        unit.charges['basicAttack'] = 0;
+      } else {
+        unit.charges['basicAttack'] = fired;
+      }
     }
   }
 }

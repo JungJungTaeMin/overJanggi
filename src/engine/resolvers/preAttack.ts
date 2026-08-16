@@ -28,9 +28,12 @@ export function resolvePreAttack(state: GameState, planP1: ActionPlan, planP2: A
         // 사거리는 이 단계(이동 직후) 기준으로 다시 본다 — 계획 시점에 닿았어도 대상이 달아났으면
         // 빗나간다. 쿨타임은 빗나가도 소모된다: 기술을 쓰기로 한 것 자체가 이번 턴의 선택이었다.
         const inRange = !!target && canTargetWithSkill(unit, target, skill, state.board);
-        if (target && inRange) addStatusEffect(target, 'root', turnNumber, unit.instanceId);
+        // 두 구속의 강도가 다르다: tank3은 발만 묶고(root), support2는 그 턴을 통째로 날린다(stun).
+        // support2가 더 센 이유는 이 기물이 공격을 아예 못 하기 때문이다 — 유일한 방해 수단이다.
+        const effect = skill.id === 'support2_root' ? 'stun' : 'root';
+        if (target && inRange) addStatusEffect(target, effect, turnNumber, unit.instanceId);
         if (skill.id === 'tank3_root') unit.cooldowns[skill.id] = 5;
-        log.push({ phase: 'preAttack', type: 'root', actorId: unit.instanceId, targetId, detail: { landed: inRange } });
+        log.push({ phase: 'preAttack', type: effect, actorId: unit.instanceId, targetId, detail: { landed: inRange } });
       } else if (skill.id === 'support2_buff') {
         // 조준 보조: 사선 위 아군 1명의 공격력을 올린다. 구속과 같은 이유로 사거리를 여기서 다시 보고,
         // 대상이 **자기 팀의 다른 기물**인지까지 확인한다 — 적을 강화하거나 자기 자신을 지정하면 안 된다

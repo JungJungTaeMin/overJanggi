@@ -28,6 +28,15 @@ export interface AttackShape {
   range: number;
   /** 직선 공격이 허용되는 축. 기본 orthogonal(상하좌우) */
   axis?: 'orthogonal' | 'diagonal' | 'both';
+  /**
+   * 대각선 방향에만 적용되는 사거리. 비우면 `range`를 그대로 쓴다(축마다 사거리가 같은 기존 동작).
+   *
+   * 왜 필요한가: dealer3처럼 "직선 4칸 + 대각선 1칸"인 비대칭 사거리를 표현하려면 축 하나로는
+   * 부족하다. axis를 `both`로 두고 여기에 1을 주면 십자로는 멀리, 대각으로는 코앞만 닿는다.
+   * 방향별 실제 사거리는 `attackRangeFor()` 한 곳에서만 계산한다 — 해결·AI·UI가 각자 계산하면
+   * 사거리 표시와 실제 타격 범위가 소리 없이 어긋난다.
+   */
+  diagonalRange?: number;
   aoeRadius?: number;
   aoeShape?: 'plus' | 'square' | 'line';
 }
@@ -54,14 +63,23 @@ export interface UnitTypeDef {
   diagonalMove: boolean;
   canAttack: boolean;
   skills: SkillDef[];
-  /** 공격 후 자동으로 부여되는 쿨다운(딜러1처럼 "기술"이 아닌 기본 공격 자체의 제약) */
-  attackCooldownTurns?: number;
+  /**
+   * 기본 공격 자체에 걸리는 제약("기술"이 아니다). 탄창식이다 — attackShots발을 연속으로 쏘고 나면
+   * attackRestTurns턴을 쉰다. 딜러1은 2발·1턴 휴식이라 1공격 2공격 3휴식 4공격 5공격 6휴식이 된다.
+   */
+  attackShots?: number;
+  attackRestTurns?: number;
   passive?: { id: string; description: string; payload?: Record<string, number> };
   isTurret?: boolean;
 }
 
 export interface StatusEffectInstance {
-  type: 'barrier' | 'root' | 'attackMode' | 'buff' | string;
+  /**
+   * `root`는 **이동만** 막는다(6장) — 묶인 채로도 쏘고 기술을 쓴다. `stun`은 그 턴의 행동
+   * 자체를 막는다(이동·공격·기술 전부). 둘을 한 종류로 합치지 않는 건 tank3 구속이 여전히
+   * 이동만 막는 기술이기 때문이다.
+   */
+  type: 'barrier' | 'root' | 'stun' | 'attackMode' | 'buff' | string;
   appliedOnTurn: number;
   expiresAfterTurn: number;
   magnitude?: number;
@@ -157,12 +175,30 @@ export interface ActionPlan {
   actions: Record<string, UnitTurnPlan>;
 }
 
+/**
+ * 힐팩 — 맵에 고정된 회복 지점. 어느 팀이든 **그 칸에 서 있으면** 회복 단계(4단계)에 회복된다.
+ *
+ * 중립 자원이라 소유자가 없다. 대신 한 번 먹으면 일정 턴 비어 있다가 다시 차는데(회복량이 아니라
+ * **재생성 시각**이 자원의 희소성을 만든다), 그래서 "누가 먼저 먹느냐"가 판단거리가 된다.
+ * 이미 체력이 꽉 찬 기물은 밟아도 소모하지 않는다 — 아군이 아깝게 낭비하는 일을 막는다.
+ */
+export interface HealPack {
+  position: Position;
+  /** 회복량. 맵 메이커에서는 10/20 두 등급만 찍을 수 있다(HEAL_PACK_AMOUNTS). */
+  amount: number;
+}
+
 export interface BoardConfig {
   width: number;
   height: number;
   obstacles: Position[];
   captureZone: Position[];
   startZones: { p1: Position[]; p2: Position[] };
+  /**
+   * 힐팩 배치. 기본 '정원' 맵에는 없고 맵 메이커로 만든 맵에서만 쓰이므로 선택 항목이다 —
+   * 기존 맵/테스트 픽스처가 전부 이 필드를 적어야 하는 상황을 피한다.
+   */
+  healPacks?: HealPack[];
 }
 
 export type GamePhase = 'draft' | 'placement' | 'planning' | 'resolving' | 'gameOver';
@@ -199,5 +235,11 @@ export interface GameState {
   score: { p1: number; p2: number };
   winner: Owner | null;
   lastPriorityOrder: TurnPriorityOrders | null;
+  /**
+   * 비어 있는 힐팩이 다시 차기까지 남은 턴. 키는 `"x,y"`(grid.key)이고, 값이 0이거나 키가 없으면
+   * 지금 먹을 수 있는 상태다. 보드(BoardConfig)가 아니라 여기 두는 이유는 보드는 **맵 정의**라
+   * 판마다 변하지 않아야 하기 때문이다 — 같은 맵으로 두 판을 돌려도 서로 영향이 없어야 한다.
+   */
+  healPackTimers: Record<string, number>;
   log: ResolutionEvent[];
 }

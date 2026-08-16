@@ -25,6 +25,13 @@ export function isActionLegal(state: GameState, unit: UnitInstance, plan: UnitTu
   }
   const typeDef = getUnitType(unit.typeId);
 
+  // 행동불가(stun, support2 구속): 그 턴의 행동 자체가 안 된다 — 이동도 공격도 기술도. 여기서
+  // 한 번에 막는 이유는 이게 "무엇을 계획할 수 있는가"의 문제라서다. 아래 개별 규칙들보다 먼저
+  // 걸러야 stun 상태에서 기술만 몰래 통과하는 구멍이 안 생긴다. 점령은 행동이 아니므로 그대로 센다.
+  if (hasActiveEffect(unit, 'stun', state.turnNumber)) {
+    return plan.baseAction.kind === 'none' && !plan.skillUse;
+  }
+
   // dealer3: 이번 턴에 토글을 사용하면 preAttack 단계에서 즉시 반영되므로,
   // "토글 후 상태"를 미리 계산해 같은 턴 토글+공격/이동 조합을 판정한다.
   if (unit.typeId === 'dealer3') {

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import type { ActionPlan, BaseAction, GameState, Owner, Position, ResolutionEvent, SkillMove, SkillUse, UnitTurnPlan } from '../engine/types';
+import type { ActionPlan, BaseAction, BoardConfig, GameState, Owner, Position, ResolutionEvent, SkillMove, SkillUse, UnitTurnPlan } from '../engine/types';
+import type { CustomMap } from '../maps/mapStorage';
 import { createInitialState } from '../engine/createInitialState';
 import { resolveTurn } from '../engine/resolveTurn';
 import { canPlanSkillMove } from '../engine/movePath';
@@ -8,7 +9,7 @@ import { mapDefinition } from '../data/mapDefinitions';
 import { aiActionPlan, aiDraftPicks, aiPlacement } from '../ai/aiPlayer';
 import type { AiDifficulty } from '../ai/difficulty';
 
-export type Stage = 'menu' | 'draft' | 'placement' | 'game';
+export type Stage = 'menu' | 'mapMaker' | 'draft' | 'placement' | 'game';
 
 /** 이 브라우저에서 무엇을 상대하는지. 화면 구성(상대 패널 노출)과 상대 계획의 출처를 결정한다. */
 export type GameMode = 'local' | 'ai' | 'online';
@@ -46,6 +47,17 @@ export function opponentOf(owner: Owner): Owner {
 }
 
 /**
+ * 이번 판에 쓸 보드. 맵을 고르지 않았으면 기본 '정원' 맵이다.
+ *
+ * 화면과 엔진이 **같은 한 곳**에서 보드를 가져오게 하려고 함수로 뺐다 — 예전처럼 여기저기서
+ * `mapDefinition`을 직접 import하면 커스텀 맵을 고른 뒤에도 배치 화면만 기본 맵을 그리는 식으로
+ * 조용히 어긋난다.
+ */
+export function boardOf(map: CustomMap | null): BoardConfig {
+  return map?.board ?? mapDefinition;
+}
+
+/**
  * 게스트가 호스트에게 "이 동작을 대신 실행해 달라"고 보내는 원격 호출.
  *
  * 온라인은 **호스트 권위(host-authoritative)** 구조다. 게스트는 자기 스토어를 직접 고치지 않고 이
@@ -71,6 +83,11 @@ export interface StoreSnapshot {
   state: GameState | null;
   plans: { p1: ActionPlan; p2: ActionPlan } | null;
   lastLog: ResolutionEvent[];
+  /**
+   * 호스트가 고른 맵. 대전이 시작되면 보드가 GameState 안에 들어가지만, **배치 화면은 아직
+   * GameState가 없어서** 이 값이 없으면 게스트만 기본 맵 위에 기물을 놓게 된다.
+   */
+  selectedMap: CustomMap | null;
 }
 
 export interface NetAdapter {
@@ -104,6 +121,11 @@ interface GameStore {
   plans: { p1: ActionPlan; p2: ActionPlan } | null;
   lastLog: ResolutionEvent[];
   selectedUnitId: string | null;
+  /** 대전에 쓸 커스텀 맵. null이면 기본 '정원' 맵. 판을 다시 시작해도 유지된다. */
+  selectedMap: CustomMap | null;
+
+  openMapMaker: () => void;
+  selectMap: (map: CustomMap | null) => void;
 
   startLocal: () => void;
   startAi: (difficulty: AiDifficulty) => void;
@@ -140,7 +162,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
   localOwner: 'p1',
   aiDifficulty: 'normal',
   online: IDLE_ONLINE,
+  selectedMap: null,
   ...FRESH,
+
+  openMapMaker: () => set({ ...FRESH, stage: 'mapMaker' }),
+
+  selectMap: (map) => set({ selectedMap: map }),
 
   startLocal: () => set({ ...FRESH, stage: 'draft', mode: 'local', localOwner: 'p1', online: IDLE_ONLINE }),
 
@@ -196,7 +223,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       if (s.mode === 'ai') {
         // AI는 배치도 스스로 끝낸다 — 사람은 자기 진영만 찍으면 된다.
         const ai = opponentOf(s.localOwner);
-        positions[ai] = aiPlacement(s.draftPicks[ai], ai, mapDefinition);
+        positions[ai] = aiPlacement(s.draftPicks[ai], ai, boardOf(s.selectedMap));
       }
       return { stage: 'placement', placementPositions: positions };
     });
@@ -220,7 +247,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set((s) => {
       const { p1, p2 } = s.placementPositions;
       if (p1.some((p) => !p) || p2.some((p) => !p)) return {};
-      const gameState = createInitialState(s.draftPicks.p1, s.draftPicks.p2, p1, p2, mapDefinition);
+      const gameState = createInitialState(s.draftPicks.p1, s.draftPicks.p2, p1, p2, boardOf(s.selectedMap));
       return { stage: 'game', state: gameState, plans: plansForTurn(gameState), lastLog: [] };
     });
   },
@@ -338,6 +365,7 @@ export function storeSnapshot(): StoreSnapshot {
     state: s.state,
     plans: s.plans,
     lastLog: s.lastLog,
+    selectedMap: s.selectedMap,
   };
 }
 
@@ -350,5 +378,7 @@ export function applySnapshot(snapshot: StoreSnapshot): void {
     state: snapshot.state,
     plans: snapshot.plans,
     lastLog: snapshot.lastLog,
+    // 맵도 호스트를 따라간다 — 게스트가 자기 브라우저에서 고른 맵은 대전에 쓰이지 않는다.
+    selectedMap: snapshot.selectedMap,
   });
 }

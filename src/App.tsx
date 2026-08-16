@@ -3,6 +3,7 @@ import type { Direction, Owner, Position, UnitTurnPlan } from './engine/types';
 import { useGameStore } from './store/gameStore';
 import { DIFFICULTY_PROFILES } from './ai/difficulty';
 import { ModeMenu } from './components/Menu/ModeMenu';
+import { MapEditor } from './components/MapMaker/MapEditor';
 import { leaveOnline } from './online/netBridge';
 import { getUnitType } from './data/unitTypes';
 import { samePosition } from './engine/grid';
@@ -257,6 +258,7 @@ function GameScreen() {
           <Board
             board={state.board}
             units={state.units}
+            healPackTimers={state.healPackTimers}
             moveCells={canPlanClicks ? moveOptions.map((o) => o.position) : []}
             attackCells={canPlanClicks ? attackOptions.map((o) => o.position) : []}
             clickPriority={clickMode}
@@ -330,7 +332,9 @@ function ModeBanner() {
   const aiDifficulty = useGameStore((s) => s.aiDifficulty);
   const online = useGameStore((s) => s.online);
   const backToMenu = useGameStore((s) => s.backToMenu);
-  if (stage === 'menu') return null;
+  const selectedMap = useGameStore((s) => s.selectedMap);
+  // 맵 메이커는 자체 툴바에 "메뉴로"가 있고 대전 정보(진영·난이도)도 의미가 없다.
+  if (stage === 'menu' || stage === 'mapMaker') return null;
 
   const label =
     mode === 'ai'
@@ -346,6 +350,8 @@ function ModeBanner() {
   return (
     <div className="mode-banner">
       <span>{label}</span>
+      {/* 어떤 맵으로 두고 있는지 — 커스텀 맵은 생김새가 제각각이라 이름이 없으면 헷갈린다. */}
+      <span className="mode-banner-map">맵 · {selectedMap ? selectedMap.name : '정원 (기본)'}</span>
       {trouble && <span className="mode-banner-alert">{trouble}</span>}
       <button
         className="btn-secondary"
@@ -368,6 +374,7 @@ export default function App() {
       <h1 className="app-title">Simultaneous</h1>
       <ModeBanner />
       {stage === 'menu' && <ModeMenu />}
+      {stage === 'mapMaker' && <MapEditor />}
       {stage === 'draft' && <UnitPicker />}
       {stage === 'placement' && <PlacementScreen />}
       {stage === 'game' && <GameScreen />}

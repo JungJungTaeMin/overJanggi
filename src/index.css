@@ -318,6 +318,8 @@ select, input {
 }
 
 .badge-root { background: #dc2626; }
+/* 행동불가는 구속보다 무거운 제약이라 더 어둡게 — 색만 보고도 강도가 구별돼야 한다. */
+.badge-stun { background: #7f1d1d; }
 .badge-barrier { background: #2563eb; }
 .badge-attackmode { background: #7c3aed; }
 .badge-shield { background: #0284c7; }
@@ -816,4 +818,234 @@ select, input {
   display: block;
   padding: 5px 8px;
   font-size: 13px;
+}
+
+/* ---------- 맵 메이커 ---------- */
+
+.mode-banner-map {
+  /* 배너는 space-between이라 가운데 항목이 늘어나 버린다 — 이름 길이만큼만 차지하게 고정한다. */
+  flex: 0 0 auto;
+  font-weight: 600;
+  color: var(--text, #0f172a);
+}
+
+.map-choice-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.map-choice {
+  flex: 1 1 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  cursor: pointer;
+  font: inherit;
+}
+
+.map-choice span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* 고른 맵은 테두리만으로는 잘 안 보인다 — 배경까지 바꿔 "이걸로 시작된다"를 분명히 한다. */
+.map-choice.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.map-maker {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.map-maker-main {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.map-maker-toolbar,
+.map-maker-actions,
+.map-share {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.map-name-input {
+  padding: 6px 10px;
+  font: inherit;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  min-width: 180px;
+}
+
+.map-size {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.map-size input {
+  width: 56px;
+  padding: 5px 6px;
+  font: inherit;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.palette {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.palette-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-bg);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+}
+
+.palette-btn.active {
+  border-color: #2563eb;
+  box-shadow: inset 0 0 0 1px #2563eb;
+}
+
+.palette-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+
+/* 찍은 개수 — 진영 블럭이 5칸 이상인지 세어 보려고 매번 눈으로 헤아리게 하지 않는다. */
+.palette-count {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.map-editor-grid {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  max-height: 62vh;
+  width: auto;
+  /* 드래그로 칠할 때 브라우저가 칸을 텍스트처럼 선택해 버리는 걸 막는다. */
+  user-select: none;
+}
+
+.map-errors,
+.map-warnings {
+  margin: 0;
+  padding: 8px 12px 8px 28px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.map-errors {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+}
+
+.map-warnings {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+}
+
+.map-notice {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.map-list {
+  min-width: 220px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.map-list h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.map-list ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.map-list li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.map-list li.active .map-list-name {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.map-list-name {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+
+.map-list-del {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.map-share input {
+  width: 260px;
+  padding: 6px 10px;
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
 }

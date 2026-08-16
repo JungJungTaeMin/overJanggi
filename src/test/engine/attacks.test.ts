@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { Direction, Position } from '../../engine/types';
 import { resolveTurn } from '../../engine/resolveTurn';
 import { addUnit, emptyPlan, emptyState, plan, rngFor } from './helpers';
 
@@ -101,6 +102,57 @@ describe('attack resolution', () => {
 
     expect(onObstacle.currentHp).toBe(onObstacle.maxHp);
     expect(exposed.currentHp).toBe(Math.max(0, exposed.maxHp - 5));
+  });
+
+  it('dealer1은 2발 쏘고 한 턴 쉰다 — 공격·공격·휴식이 반복된다', () => {
+    // 장거리 화력형의 제약은 "쏘면 3턴 못 쏜다"가 아니라 탄창식이다: 2발 연속 → 1턴 휴식 → 다시 2발.
+    // 매 턴 같은 공격을 계획해도 쉬는 턴은 sanitizePlan이 걸러내므로(validation.ts) 피해가 0이 된다.
+    const state = emptyState();
+    const sniper = addUnit(state, 'dealer1', 'p1', { x: 0, y: 0 });
+    const target = addUnit(state, 'tank1', 'p2', { x: 3, y: 0 });
+
+    // 매 턴 체력을 되돌려 놓는다 — 표적이 죽으면 부활 대기로 빠져 사선에서 사라지고, 그때부터는
+    // "쏘지 않은 턴"과 "쏠 대상이 없던 턴"이 구별되지 않는다. 재려는 건 발사 게이트뿐이다.
+    const dealt: number[] = [];
+    for (let turn = 1; turn <= 6; turn++) {
+      target.currentHp = target.maxHp;
+      resolveTurn(
+        state,
+        plan('p1', turn, { [sniper.instanceId]: { baseAction: { kind: 'attack', direction: 'right' } } }),
+        emptyPlan('p2', turn),
+        rngFor('p1'),
+      );
+      dealt.push(target.maxHp - target.currentHp);
+    }
+
+    expect(dealt.map((d) => d > 0)).toEqual([true, true, false, true, true, false]);
+    // 쏜 턴들은 전부 같은 피해 — 쉬는 턴이 "빗나간 턴"이 아니라 진짜 발사 금지임을 못박는다.
+    expect(new Set(dealt.filter((d) => d > 0)).size).toBe(1);
+  });
+
+  it('축마다 사거리가 다르면 방향에 따라 닿는 거리가 달라진다 — dealer3는 직선 4칸 · 대각 1칸', () => {
+    // `diagonalRange`가 붙기 전까지 AttackShape의 사거리는 축과 무관한 값 하나였다. 이 테스트가
+    // 지키는 것은 dealer3의 숫자가 아니라 **비대칭 사거리가 실제로 해결 단계에 반영된다**는
+    // 사실이다 — 대각 2칸이 맞으면 diagonalRange가 어디선가 무시되고 range로 대체된 것이다.
+    const shot = (attackerAt: Position, targetAt: Position, direction: Direction) => {
+      const state = emptyState();
+      const shooter = addUnit(state, 'dealer3', 'p1', attackerAt);
+      const target = addUnit(state, 'tank1', 'p2', targetAt); // maxHp 40 — 한 방에 안 죽어 피해량이 그대로 남는다
+      resolveTurn(
+        state,
+        plan('p1', 1, {
+          // 공격 모드를 켜야 쏠 수 있는 기물이라 토글을 같은 턴에 함께 낸다.
+          [shooter.instanceId]: { baseAction: { kind: 'attack', direction }, skillUse: { skillId: 'dealer3_attack_mode' } },
+        }),
+        emptyPlan('p2', 1),
+        rngFor('p1'),
+      );
+      return target.maxHp - target.currentHp;
+    };
+
+    expect(shot({ x: 0, y: 4 }, { x: 4, y: 4 }, 'right')).toBeGreaterThan(0); // 직선 4칸 — 닿는다
+    expect(shot({ x: 0, y: 4 }, { x: 1, y: 5 }, 'downright')).toBeGreaterThan(0); // 대각 1칸 — 닿는다
+    expect(shot({ x: 0, y: 4 }, { x: 2, y: 6 }, 'downright')).toBe(0); // 대각 2칸 — 안 닿는다
   });
 
   it('logs a cancelled-attack event for a unit that dies before the attack phase', () => {

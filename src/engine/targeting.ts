@@ -1,6 +1,20 @@
-import type { BoardConfig, Direction } from './types';
+import type { AttackShape, BoardConfig, Direction } from './types';
 import type { Position } from './types';
-import { inBounds, isObstacle, step } from './grid';
+import { DIAGONAL_DIRECTIONS, inBounds, isObstacle, step } from './grid';
+
+/**
+ * 이 방향으로 쏠 때의 실제 사거리. 축마다 사거리가 다를 수 있으므로(`diagonalRange`) 방향을
+ * 받아서 판정한다.
+ *
+ * **사거리를 읽는 곳은 전부 이 함수를 거쳐야 한다.** 해결(attacks.ts)·AI(attackValue)·UI
+ * 하이라이트(actionGeometry.ts)가 각자 `shape.range`를 직접 읽으면, 비대칭 사거리를 넣는 순간
+ * 화면에 표시되는 사정권과 실제로 맞는 범위가 어긋난다 — 플레이어가 규칙을 오해하게 만드는
+ * 종류의 버그라 값 하나를 공유하는 것으로 막는다.
+ */
+export function attackRangeFor(shape: AttackShape, direction: Direction): number {
+  const diagonal = DIAGONAL_DIRECTIONS.includes(direction);
+  return diagonal ? shape.diagonalRange ?? shape.range : shape.range;
+}
 
 const PERPENDICULAR: Record<Direction, [Direction, Direction]> = {
   up: ['left', 'right'],
@@ -112,6 +126,21 @@ export function isWithinSkillRange(
   if (distance > range) return false;
 
   return hasLineOfSight(from, to, board);
+}
+
+/**
+ * 이 칸이 공격 사정권(축 + 축별 사거리 + 시야) 안인가. 축마다 사거리가 다를 수 있어
+ * `isWithinSkillRange`를 축별로 나눠 부른다 — 기술용 함수는 사거리를 하나만 받기 때문이다.
+ *
+ * 아군이 사선을 막는지는 보지 **않는다**(칸 점유는 여기 관심사가 아니다). 계측에서 "쏠 수 있었던
+ * 턴"의 상한을 잡거나 UI가 사정권을 그릴 때 쓰는 기하 판정이다.
+ */
+export function isWithinAttackRange(from: Position, to: Position, shape: AttackShape, board: BoardConfig): boolean {
+  const axis = shape.axis ?? 'orthogonal';
+  const diagonalRange = shape.diagonalRange ?? shape.range;
+  if (axis !== 'diagonal' && isWithinSkillRange(from, to, shape.range, board, 'orthogonal')) return true;
+  if (axis !== 'orthogonal' && isWithinSkillRange(from, to, diagonalRange, board, 'diagonal')) return true;
+  return false;
 }
 
 /** 범위 공격/회복용 반경 판정 */

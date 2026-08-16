@@ -5,8 +5,15 @@ import { seededRng } from '../../engine/rng';
 import { isActionLegal } from '../../engine/validation';
 import { resolveTurn } from '../../engine/resolveTurn';
 import { mapDefinition } from '../../data/mapDefinitions';
+import { unitTypes } from '../../data/unitTypes';
 import { ROSTER_SIZE } from '../../data/constants';
 import { addUnit, emptyPlan, emptyState, testBoard } from '../engine/helpers';
+
+/**
+ * 공격력은 밸런스 조정으로 바뀌는 값이라 테스트에 박지 않는다. 여기서 재는 건 특정 숫자가 아니라
+ * **어느 칸까지 위협이 닿는가**(그리고 그 합산 방식)이다.
+ */
+const ATTACK = (id: string) => unitTypes.find((t) => t.id === id)!.attack;
 
 /** 잡음 없이 "가장 좋은 수"만 보는 프로필 — 휴리스틱의 의도를 그대로 검증하기 위한 것. */
 const HARD = DIFFICULTY_PROFILES.hard;
@@ -198,16 +205,19 @@ describe('AI — 실전 진행', () => {
  * 아니라 validation.ts가 강제하는 규칙, 혹은 격자에서 셀 수 있는 거리다.
  */
 describe('AI — 위협 계산(threatAt)', () => {
-  it('직선 공격 기물은 정렬할 수 있는 칸만 위협한다 — 주변 사각형 전체가 아니다', () => {
+  it('선 공격 기물은 정렬할 수 있는 칸만 위협한다 — 주변 사각형 전체가 아니다', () => {
     const state = emptyState();
     const victim = addUnit(state, 'tank1', 'p1', { x: 0, y: 0 });
-    addUnit(state, 'dealer1', 'p2', { x: 4, y: 0 }); // 직선 6 · 이동 1 · 공격력 8
+    addUnit(state, 'dealer1', 'p2', { x: 4, y: 0 }); // 직선·대각 6 · 이동 1 · 공격력 9 · 대각 이동 불가
 
     // 같은 열 위 4칸 → 그냥 쏘면 된다.
-    expect(threatAt(state, victim, { x: 4, y: 4 })).toBe(8);
-    // 두 칸 옆 → 사선에 올리려면 2칸 옆으로 가야 하는데 이동력이 1이다. 체비쇼프 거리는 4라
-    // 예전 계산은 여기를 위협으로 봤다.
+    expect(threatAt(state, victim, { x: 4, y: 4 })).toBe(9);
+    // (6,4)는 열도 행도 대각선도 아니다(dx 2, dy 4). 대각선에 올리려면 두 값의 차 2를 없애야
+    // 하는데 dealer1은 대각 이동을 못 해 한 걸음에 1씩만 줄고, 이동력은 1이다. 체비쇼프 거리는
+    // 4라 예전 계산은 여기를 위협으로 봤다.
     expect(threatAt(state, victim, { x: 6, y: 4 })).toBe(0);
+    // 반면 (6,2)는 정확히 대각선 위다 — 축을 넓힌 뒤로 여기는 진짜 위협이다.
+    expect(threatAt(state, victim, { x: 6, y: 2 })).toBe(9);
   });
 
   it('위협의 크기는 맞는 쪽이 아니라 **쏘는 쪽**의 이동력으로 정해진다', () => {
@@ -216,7 +226,7 @@ describe('AI — 위협 계산(threatAt)', () => {
     // 들어가 있어서, 같은 칸인데도 tank2(이동 4)만 위협으로 보고 support2(이동 1)는 안전하다고 봤다.
     const slow = addUnit(state, 'support2', 'p1', { x: 0, y: 0 });
     const fast = addUnit(state, 'tank2', 'p1', { x: 1, y: 0 });
-    addUnit(state, 'dealer1', 'p2', { x: 4, y: 0 }); // 직선 6 · 이동 1
+    addUnit(state, 'dealer1', 'p2', { x: 4, y: 0 }); // 직선·대각 6 · 이동 1
 
     const cell = { x: 4, y: 8 }; // 같은 열이지만 8칸 밖 — 사거리 6 + 이동 1로는 못 닿는다
     expect(threatAt(state, slow, cell)).toBe(threatAt(state, fast, cell));
@@ -228,8 +238,8 @@ describe('AI — 위협 계산(threatAt)', () => {
     const victim = addUnit(state, 'tank1', 'p1', { x: 0, y: 0 });
     const sniper = addUnit(state, 'dealer1', 'p2', { x: 4, y: 0 });
 
-    expect(threatAt(state, victim, { x: 4, y: 4 })).toBe(8);
-    sniper.cooldowns['basicAttack'] = 2; // 한 번 쏘면 3턴을 못 쏜다
+    expect(threatAt(state, victim, { x: 4, y: 4 })).toBe(9);
+    sniper.cooldowns['basicAttack'] = 2; // 2발 다 쏜 직후 = 쉬는 턴
     expect(threatAt(state, victim, { x: 4, y: 4 })).toBe(0);
   });
 
@@ -247,9 +257,9 @@ describe('AI — 위협 계산(threatAt)', () => {
   it('dealer3은 이동과 공격을 같은 턴에 못 하므로 제자리 사거리까지만 위협한다', () => {
     const state = emptyState();
     const victim = addUnit(state, 'tank1', 'p1', { x: 0, y: 0 });
-    addUnit(state, 'dealer3', 'p2', { x: 4, y: 0 }); // 직선·대각 4 · 이동 1 · 공격력 10
+    addUnit(state, 'dealer3', 'p2', { x: 4, y: 0 }); // 직선 4 · 이동 1
 
-    expect(threatAt(state, victim, { x: 4, y: 4 })).toBe(10);
+    expect(threatAt(state, victim, { x: 4, y: 4 })).toBe(ATTACK('dealer3'));
     // 한 칸만 더 가면 닿지만, 그 한 칸을 가면 이번 턴에 못 쏜다(validation.ts).
     expect(threatAt(state, victim, { x: 4, y: 5 })).toBe(0);
   });
@@ -269,9 +279,9 @@ describe('AI — 위협 계산(threatAt)', () => {
   it('여러 적의 위협은 합산된다', () => {
     const state = emptyState();
     const victim = addUnit(state, 'tank1', 'p1', { x: 0, y: 0 });
-    addUnit(state, 'dealer1', 'p2', { x: 4, y: 0 }); // 공격력 8
-    addUnit(state, 'dealer3', 'p2', { x: 4, y: 8 }); // 공격력 10, (4,4)까지 직선 4
+    addUnit(state, 'dealer1', 'p2', { x: 4, y: 0 });
+    addUnit(state, 'dealer3', 'p2', { x: 4, y: 8 }); // (4,4)까지 직선 4
 
-    expect(threatAt(state, victim, { x: 4, y: 4 })).toBe(18);
+    expect(threatAt(state, victim, { x: 4, y: 4 })).toBe(ATTACK('dealer1') + ATTACK('dealer3'));
   });
 });

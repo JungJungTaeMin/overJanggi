@@ -61,6 +61,9 @@ export function ActionPanel({ owner, label }: Props) {
                     </span>
                     {unit.shieldHp > 0 && <span className="badge badge-shield">보호막 {unit.shieldHp}</span>}
                     {hasActiveEffect(unit, 'root', state.turnNumber) && <span className="badge badge-root">구속</span>}
+                    {/* 행동불가는 구속과 전혀 다른 제약이다(이동뿐 아니라 공격·기술까지 막힌다).
+                        같은 배지로 묶으면 왜 공격이 안 잡히는지 화면만 보고는 알 수 없다. */}
+                    {hasActiveEffect(unit, 'stun', state.turnNumber) && <span className="badge badge-stun">행동불가</span>}
                     {hasActiveEffect(unit, 'barrier', state.turnNumber) && <span className="badge badge-barrier">방벽</span>}
                     {hasActiveEffect(unit, 'attackMode', state.turnNumber) && <span className="badge badge-attackmode">공격모드</span>}
                     {/* 조준 보조는 지속시간이 짧아 "지금 이 턴에 얼마나 세졌는지"를 그 자리에서 못 보면

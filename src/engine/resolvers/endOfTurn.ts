@@ -1,6 +1,6 @@
 import type { GameState, Owner, Position, ResolutionEvent, UnitInstance } from '../types';
 import type { RngFn } from '../rng';
-import { WIN_SCORE } from '../../data/constants';
+import { CAPTURE_MARGIN, WIN_SCORE } from '../../data/constants';
 import { getUnitType, maxHpFor } from '../../data/unitTypes';
 import { initCharges } from '../createInitialState';
 import { inBounds, isObstacle, isOccupied, isInCaptureZone, key, step } from '../grid';
@@ -167,6 +167,18 @@ export function resolveEndOfTurn(state: GameState, rngFn: RngFn, log: Resolution
     pruneExpiredEffects(unit, nextTurn);
   }
 
+  // 5-1) 힐팩 재생성 카운트다운. 기물 쿨타임과 **같은 틱**에서 깎아 두 시계가 어긋나지 않게 한다
+  //      (그래서 healing.ts가 넣는 값도 쿨타임과 똑같이 +1 보정을 쓴다).
+  for (const cell of Object.keys(state.healPackTimers)) {
+    const next = state.healPackTimers[cell] - 1;
+    if (next <= 0) {
+      delete state.healPackTimers[cell];
+      log.push({ phase: 'endOfTurn', type: 'healPackReady', detail: { at: cell } });
+    } else {
+      state.healPackTimers[cell] = next;
+    }
+  }
+
   // 6) 부활 카운트다운 + 사망 중 기술2 쿨타임 감소(§8: "사망한 동안에도 기술 2의 쿨타임은 정상적으로
   // 감소하지만, 부활 시 초기화하지 않는다" — 나머지 쿨타임/충전/상태이상은 death.ts에서 이미 초기화됨).
   const respawningNow: UnitInstance[] = [];
@@ -182,18 +194,24 @@ export function resolveEndOfTurn(state: GameState, rngFn: RngFn, log: Resolution
   }
   respawnUnits(state, respawningNow, rngFn, log);
 
-  // 7) 점령 점수 — **다수결 점령, 턴당 최대 1점**. 생존 유닛(기절·구속 포함, 사망 제외)을
-  // 팀별로 세어 **인원이 더 많은 쪽이 1점**을 얻는다. 정확히 동수면 양 팀 모두 0점.
-  // 몇 명 더 많은지는 점수에 영향을 주지 않는다 — 3:1이든 5:1이든 똑같이 1점이다.
+  // 7) 점령 점수 — **인원 차 점령, 턴당 최대 1점**. 생존 유닛(기절·구속 포함, 사망 제외)을
+  // 팀별로 센 뒤, 다음 둘 중 하나면 그 팀이 1점을 얻는다:
+  //   · 상대가 **아예 없다**(무저항) — 1:0도 점수가 난다.
+  //   · 상대가 있다면 CAPTURE_MARGIN명 **이상 앞선다** — 2:1은 경합(0점), 3:1부터 점수.
+  // 몇 명 더 많은지는 점수 크기에 영향을 주지 않는다 — 3:1이든 5:0이든 똑같이 1점이다.
+  //
+  // 무저항을 예외로 두는 이유: 아무도 지키지 않는 점령지를 한 기물이 차지했는데 0점이면, 상대가
+  // 전멸했거나 완전히 물러난 판이 진행되지 않고 멈춘다. 인원 차 기준은 **막는 쪽이 있을 때**
+  // 비로소 의미가 있는 규칙이다.
   //
   // 기획서 5장 원문은 "양 팀이 함께 있으면 무조건 경합 0점"이었는데, 그러면 양쪽이 점령지에
   // 들어간 순간 아무도 점수를 못 내고 그 상태가 스스로 유지된다 — 200판 시뮬레이션에서 17.5%가
   // 끝나지 않았고, 그 판들의 선두 팀 평균 점수는 300턴을 돌려도 10점 만점에 1.6점이었다.
   // 느린 판이 아니라 완전 교착이라 기물 스탯으로는 풀 수 없었다.
   //
-  // 승자 판정을 **인원수가 아니라 다수결**로 바꾸면 양쪽이 함께 있어도 병력을 더 밀어 넣을 이유가
-  // 생겨 교착이 풀린다. 상한이 1점이라 "이미 이기고 있는 점령지에 병력을 더 붓는" 보상은 없고,
-  // 과반만 잡으면 나머지 기물은 교전·수비로 돌리는 편이 낫다.
+  // 그래서 승자 판정을 인원수가 아니라 **인원 차**로 바꿨다. 양쪽이 함께 있어도 병력을 더 밀어
+  // 넣을 이유가 생겨 교착이 풀린다. 차이 기준을 1이 아니라 2로 둔 것은 "한 명 슬쩍 더 넣기"로
+  // 점령이 굴러가지 않게 하려는 것이다 — 수비 한 명이 공격 두 명을 묶어 두는 값을 갖는다.
   const owners: Owner[] = ['p1', 'p2'];
   const counts: Record<Owner, number> = { p1: 0, p2: 0 };
   for (const unit of state.units) {
@@ -201,9 +219,10 @@ export function resolveEndOfTurn(state: GameState, rngFn: RngFn, log: Resolution
     if (isInCaptureZone(unit.position, state.board)) counts[unit.owner] += 1;
   }
   const [a, b] = owners;
-  if (counts[a] !== counts[b]) {
-    state.score[counts[a] > counts[b] ? a : b] += 1;
-  }
+  const leader = counts[a] > counts[b] ? a : b;
+  const follower = leader === a ? b : a;
+  const needed = counts[follower] === 0 ? 1 : counts[follower] + CAPTURE_MARGIN;
+  if (counts[leader] >= needed) state.score[leader] += 1;
 
   log.push({ phase: 'endOfTurn', type: 'score', detail: { p1: state.score.p1, p2: state.score.p2, p1Count: counts.p1, p2Count: counts.p2 } });
 

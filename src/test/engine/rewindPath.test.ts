@@ -187,7 +187,9 @@ describe('dealer2 time rewind', () => {
     // 사용자 확정 규칙: 복귀 시점은 턴종료가 아니라 "공격 이후" — 그 턴에 받은 피해까지 되돌린다.
     const state = emptyState();
     const dealer2 = addUnit(state, 'dealer2', 'p1', { x: 0, y: 0 });
-    const attacker = addUnit(state, 'dealer1', 'p2', { x: 4, y: 0 }); // 공격 8, 직선 사거리 6
+    // dealer2는 maxHp 10이라 dealer1(공격 10)로 때리면 되감기 전에 죽어 버린다 — 살아남아야
+    // "받은 피해가 되돌려지는가"를 잴 수 있으므로 공격력 3짜리 tank1을 사거리(직선 3) 안에 세운다.
+    const attacker = addUnit(state, 'tank1', 'p2', { x: 3, y: 0 });
 
     resolveTurn(
       state,
@@ -205,7 +207,7 @@ describe('dealer2 time rewind', () => {
     );
 
     const rewindEvent = log.find((e) => e.type === 'rewind');
-    expect(rewindEvent?.detail?.fromHp).toBe(dealer2.maxHp - 8); // 피해는 분명히 들어갔고
+    expect(rewindEvent?.detail?.fromHp).toBe(dealer2.maxHp - 3); // 피해는 분명히 들어갔고
     expect(rewindEvent?.detail?.toHp).toBe(dealer2.maxHp); // 복귀가 그것까지 되돌린다
     expect(dealer2.currentHp).toBe(dealer2.maxHp);
   });
@@ -213,7 +215,7 @@ describe('dealer2 time rewind', () => {
   it('clears the anchor on death and restores full charges on respawn', () => {
     const state = emptyState();
     const dealer2 = addUnit(state, 'dealer2', 'p1', { x: 0, y: 0 });
-    dealer2.currentHp = 5; // dealer1의 8뎀으로 확실히 사망시킨다
+    dealer2.currentHp = 5; // dealer1의 10뎀으로 확실히 사망시킨다
     const killer = addUnit(state, 'dealer1', 'p2', { x: 4, y: 0 });
 
     resolveTurn(

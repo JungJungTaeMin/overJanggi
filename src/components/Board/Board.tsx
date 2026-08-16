@@ -1,5 +1,5 @@
 import type { BoardConfig, Position, UnitInstance } from '../../engine/types';
-import { isInCaptureZone, isObstacle, samePosition } from '../../engine/grid';
+import { healPackAt, isInCaptureZone, isObstacle, samePosition } from '../../engine/grid';
 import type { PreviewStep } from '../Planning/actionGeometry';
 import { UnitToken } from './UnitToken';
 
@@ -22,9 +22,14 @@ export interface RewindAnchor {
   hp: number;
 }
 
+/** 힐팩 색 — 맵 메이커 팔레트(mapModel.TILE_PALETTE)와 반드시 같은 값이어야 미리보기가 실제와 같다. */
+export const HEAL_PACK_COLOR: Record<number, string> = { 10: '#bbf7d0', 20: '#4ade80' };
+
 interface Props {
   board: BoardConfig;
   units: UnitInstance[];
+  /** 비어 있는(재생성 대기 중인) 힐팩 표시용. GameState.healPackTimers를 그대로 넘긴다. */
+  healPackTimers?: Record<string, number>;
   highlightCells?: Position[];
   /** 선택된 유닛이 이동 가능한 칸(초록 강조) — 클릭하면 해당 방향·칸수로 이동을 지정한다. */
   moveCells?: Position[];
@@ -48,6 +53,9 @@ interface Props {
 function cellFill(p: Position, board: BoardConfig): string {
   if (isObstacle(p, board)) return '#374151';
   if (isInCaptureZone(p, board)) return '#fde68a';
+  // 힐팩은 시작지점 안에도 놓을 수 있으므로 진영 색보다 먼저 본다 — 진영 색에 덮이면 안 보인다.
+  const pack = healPackAt(p, board);
+  if (pack) return HEAL_PACK_COLOR[pack.amount] ?? '#bbf7d0';
   if (board.startZones.p1.some((s) => samePosition(s, p))) return '#dbeafe';
   if (board.startZones.p2.some((s) => samePosition(s, p))) return '#fee2e2';
   return '#f8fafc';
@@ -61,6 +69,7 @@ function toSet(cells: Position[]): Set<string> {
 export function Board({
   board,
   units,
+  healPackTimers = {},
   highlightCells = [],
   moveCells = [],
   attackCells = [],
@@ -128,6 +137,25 @@ export function Board({
               </title>
             )}
           </rect>
+        );
+      })}
+      {/* 힐팩 — 십자 표시. 먹어서 비어 있는 동안은 회색 점선 + 남은 턴수를 띄운다.
+          색만 다르게 하면 "여기 힐팩이 있었나?"를 기억해야 하므로 남은 턴을 숫자로 보여 준다. */}
+      {(board.healPacks ?? []).map((pack) => {
+        const cx = pack.position.x * CELL_SIZE + CELL_SIZE / 2;
+        const cy = pack.position.y * CELL_SIZE + CELL_SIZE / 2;
+        const arm = CELL_SIZE * 0.18;
+        const thick = CELL_SIZE * 0.07;
+        const remaining = healPackTimers[`${pack.position.x},${pack.position.y}`] ?? 0;
+        const color = remaining > 0 ? '#94a3b8' : '#15803d';
+        return (
+          <g key={`pack-${pack.position.x},${pack.position.y}`} pointerEvents="none" opacity={remaining > 0 ? 0.5 : 1}>
+            <rect x={cx - arm} y={cy - thick} width={arm * 2} height={thick * 2} fill={color} rx={1} />
+            <rect x={cx - thick} y={cy - arm} width={thick * 2} height={arm * 2} fill={color} rx={1} />
+            <text x={cx} y={cy + CELL_SIZE / 2 - 2} textAnchor="middle" fontSize={8} fontWeight="bold" fill={color}>
+              {remaining > 0 ? `${remaining}턴` : pack.amount}
+            </text>
+          </g>
         );
       })}
       {[...highlightSet].map((key) => {

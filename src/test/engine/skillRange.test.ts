@@ -146,7 +146,7 @@ describe('targeted skill range', () => {
       // "지금 이 적을 마무리하려고 버프를 건다"는 계획이 전부 빗나간다.
       const state = emptyState();
       const healer = addUnit(state, 'support2', 'p1', { x: 0, y: 0 });
-      const shooter = addUnit(state, 'dealer1', 'p1', { x: 3, y: 0 }); // 공격 8, 직선 6
+      const shooter = addUnit(state, 'dealer1', 'p1', { x: 3, y: 0 }); // 공격 9, 직선·대각 6
       const enemy = addUnit(state, 'tank1', 'p2', { x: 5, y: 0 });
       const bonus = 3; // unitTypes의 support2_buff.attackBonus
 
@@ -160,7 +160,7 @@ describe('targeted skill range', () => {
         rngFor('p1'),
       );
 
-      expect(enemy.currentHp).toBe(enemy.maxHp - (8 + bonus));
+      expect(enemy.currentHp).toBe(enemy.maxHp - (9 + bonus));
     });
 
     it('does not buff an enemy', () => {
@@ -199,8 +199,8 @@ describe('targeted skill range', () => {
     });
   });
 
-  describe('support2 root — 직선 2칸', () => {
-    it('roots an enemy on the line within 2', () => {
+  describe('support2 root — 직선 2칸 · 행동불가', () => {
+    it('stuns an enemy on the line within 2', () => {
       const state = emptyState();
       const caster = addUnit(state, 'support2', 'p1', { x: 0, y: 0 });
       const enemy = addUnit(state, 'tank1', 'p2', { x: 2, y: 0 });
@@ -214,10 +214,10 @@ describe('targeted skill range', () => {
         rngFor('p1'),
       );
 
-      expect(enemy.statusEffects.some((e) => e.type === 'root')).toBe(true);
+      expect(enemy.statusEffects.some((e) => e.type === 'stun')).toBe(true);
     });
 
-    it('does not root an enemy 3 cells away', () => {
+    it('does not stun an enemy 3 cells away', () => {
       const state = emptyState();
       const caster = addUnit(state, 'support2', 'p1', { x: 0, y: 0 });
       const enemy = addUnit(state, 'tank1', 'p2', { x: 3, y: 0 });
@@ -231,7 +231,7 @@ describe('targeted skill range', () => {
         rngFor('p1'),
       );
 
-      expect(enemy.statusEffects.some((e) => e.type === 'root')).toBe(false);
+      expect(enemy.statusEffects.some((e) => e.type === 'stun')).toBe(false);
     });
   });
 

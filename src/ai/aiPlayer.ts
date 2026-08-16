@@ -15,12 +15,15 @@ import { getUnitType, unitTypes } from '../data/unitTypes';
 import {
   DIAGONAL_DIRECTIONS,
   ORTHOGONAL_DIRECTIONS,
+  healPackAt,
   inBounds,
+  isInCaptureZone,
   isObstacle,
+  key,
   samePosition,
   step,
 } from '../engine/grid';
-import { frontBandCells, isWithinSkillRange, lineCells } from '../engine/targeting';
+import { attackRangeFor, frontBandCells, isWithinSkillRange, lineCells } from '../engine/targeting';
 import { skillRangeSpec } from '../engine/skillRange';
 import { hasActiveEffect, sumMagnitude } from '../engine/statusEffects';
 import { isActionLegal, sanitizePlan } from '../engine/validation';
@@ -28,7 +31,7 @@ import { staticRunLimit } from '../engine/movePath';
 // 동전은 해결 단계에서 굴러가므로 계획 시점에는 결과를 알 수 없다 — AI도 앞면 기준(최대치)으로 본다.
 import { plannedAttackPower, plannedMoveSpeed } from '../engine/unitStats';
 import type { RngFn } from '../engine/rng';
-import { ROSTER_SIZE } from '../data/constants';
+import { CAPTURE_MARGIN, ROSTER_SIZE } from '../data/constants';
 import { DIFFICULTY_PROFILES, type AiDifficulty, type DifficultyProfile } from './difficulty';
 
 export type { AiDifficulty } from './difficulty';
@@ -132,7 +135,7 @@ function attackValue(
     return total;
   }
 
-  for (const cell of lineCells(from, direction, shape.range, state.board)) {
+  for (const cell of lineCells(from, direction, attackRangeFor(shape, direction), state.board)) {
     const occupant = occupantAt(state, cell, unit.instanceId);
     if (!occupant) continue;
     if (occupant.owner === unit.owner) return 0; // 아군이 사선을 막는다
@@ -162,6 +165,9 @@ export function stepsToLineUp(from: Position, to: Position, shape: AttackShape, 
   const dx = Math.abs(to.x - from.x);
   const dy = Math.abs(to.y - from.y);
   const r = shape.range;
+  // 축마다 사거리가 다를 수 있다(dealer3: 직선 4 · 대각 1). 대각 정렬 비용을 직선 사거리로 재면
+  // "대각으로 다가가면 곧 사선에 든다"고 착각해 위협을 과대평가한다.
+  const dr = shape.diagonalRange ?? shape.range;
 
   /**
    * 한 걸음이 (dx, dy)를 얼마나 바꿀 수 있는지가 이동 방식으로 갈린다:
@@ -182,7 +188,7 @@ export function stepsToLineUp(from: Position, to: Position, shape: AttackShape, 
   // 대각선 공격: dx == dy == t(단 t ≤ 사거리)가 되어야 사선에 오른다. t를 0..사거리로 훑어
   // 가장 싼 값을 고른다 — 사거리가 6 이하라 순회 비용은 무시할 만하고, 닫힌 식보다 틀릴 여지가 없다.
   let diagonal = Infinity;
-  for (let t = 0; t <= r; t++) diagonal = Math.min(diagonal, cost(Math.abs(dx - t), Math.abs(dy - t)));
+  for (let t = 0; t <= dr; t++) diagonal = Math.min(diagonal, cost(Math.abs(dx - t), Math.abs(dy - t)));
 
   const axis = shape.axis ?? 'orthogonal';
   if (axis === 'orthogonal') return orthogonal;
@@ -196,7 +202,7 @@ export function stepsToLineUp(from: Position, to: Position, shape: AttackShape, 
  * 동시 턴이라 적도 이번 턴에 움직인 뒤 때린다 — 그래서 "적의 이동력만큼 다가와서 조준선에
  * 올릴 수 있는가"를 본다. 이번 턴에 때릴 수 없는 게 확실한 적은 아예 세지 않는다:
  *
- *   - 기본공격 쿨타임 중(dealer1은 한 번 쏘면 3턴을 못 쏜다) → 이번 턴 공격이 불법이다
+ *   - 기본공격 쿨타임 중(dealer1은 2발 쏘면 한 턴을 쉰다) → 이번 턴 공격이 불법이다
  *   - 구속당한 적 → 다가올 수 없다(사거리는 그대로 위협)
  *   - dealer3 → 이동과 공격이 같은 턴에 절대 불가하다(validation.ts). 제자리 사거리만 위협
  *
@@ -209,6 +215,8 @@ export function threatAt(state: GameState, unit: UnitInstance, dest: Position): 
     if (!typeDef.canAttack) continue;
     // 이번 턴에 기본공격 자체가 불법인 적은 위협이 0이다.
     if ((enemy.cooldowns['basicAttack'] ?? 0) > 0) continue;
+    // 행동불가(support2 구속)는 이번 턴을 통째로 날린다 — 사거리 안에 있어도 쏘지 못한다.
+    if (hasActiveEffect(enemy, 'stun', state.turnNumber)) continue;
 
     // **적의** 이동력이다. 예전에는 여기에 위협을 받는 쪽(`unit`)의 이동력이 들어가 있어서,
     // 발이 느린 기물은 적을 실제보다 덜 무서워하고 발 빠른 기물은 더 무서워했다 — 정확히 반대다.
@@ -223,13 +231,49 @@ export function threatAt(state: GameState, unit: UnitInstance, dest: Position): 
 }
 
 /**
+ * 점령지에 있는 팀별 인원(포탑 제외 — 엔진의 점령 집계와 같은 기준).
+ *
+ * 평가 대상 기물 **자신은 빼고** 센다. 지금 어디 서 있는지가 아니라 이 후보 칸으로 갔을 때
+ * 인원 차가 어떻게 되는지를 보려는 것이라, 자신을 포함하면 이미 점령지에 있는 기물이 자기 자신을
+ * 두 번 세어 "나는 잉여"라고 판단하고 스스로 걸어 나간다.
+ */
+function zoneCountsExcluding(state: GameState, self: UnitInstance): Record<Owner, number> {
+  const counts: Record<Owner, number> = { p1: 0, p2: 0 };
+  for (const u of state.units) {
+    if (!u.alive || !u.position || u.isTurret || u.instanceId === self.instanceId) continue;
+    if (isInCaptureZone(u.position, state.board)) counts[u.owner] += 1;
+  }
+  return counts;
+}
+
+/**
  * 도착 칸 자체의 가치. 이 게임의 승리 조건은 점령이므로 **점령지 근접이 기본 나침반**이고,
  * 체력이 적을수록 위협받는 칸을 더 강하게 피한다(탱커는 어차피 맞으러 가는 역할이라 덜 피한다).
  */
 function positionValue(state: GameState, unit: UnitInstance, dest: Position, profile: DifficultyProfile): number {
   const board = state.board;
   const inZone = board.captureZone.some((c) => samePosition(c, dest));
-  let score = inZone ? 14 * profile.captureWeight : -distanceToCaptureZone(dest, board) * 0.9 * profile.captureWeight;
+  // 점령 규칙은 상대가 없으면 1기로도 점수를 주지만, 상대가 있으면 CAPTURE_MARGIN명 이상 앞서야
+  // 준다(endOfTurn의 점령 점수 참고). 그래서 "점령지에 서 있다"는 사실 자체가 아니라 **몇 번째로
+  // 들어가는 기물인가**가 값을 정한다. 점수가 나는 데까지 필요한 인원은 제값을 받고, 그 선을 넘는
+  // 잉여 인원은 값을 깎아 교전·수비로 돌린다.
+  //
+  // 이 구분이 없으면(예전처럼 점령지 칸을 평평하게 높게 보면) AI가 인원수를 모른 채 몰려들어
+  // 2:2·3:2 같은 **무득점 대치**가 굳는다 — 규칙을 인원 차 기준으로 바꾼 직후 무승부가
+  // 0.2%에서 7%로 뛴 것이 그 증상이었다.
+  //
+  // 잉여도 0으로 깎지 않고 0.35만 남기는 이유: 점령지를 완전히 비우면 상대가 그 다음 턴에 공짜로
+  // 차이를 벌린다. 남아 있는 것 자체가 상대에게 필요한 인원을 늘리는 수비 값어치를 갖는다.
+  let score: number;
+  if (inZone) {
+    const counts = zoneCountsExcluding(state, unit);
+    const foes = counts[unit.owner === 'p1' ? 'p2' : 'p1'];
+    const needed = foes === 0 ? 1 : foes + CAPTURE_MARGIN;
+    const surplus = counts[unit.owner] + 1 > needed;
+    score = 14 * profile.captureWeight * (surplus ? 0.35 : 1);
+  } else {
+    score = -distanceToCaptureZone(dest, board) * 0.9 * profile.captureWeight;
+  }
 
   // 적에게서 너무 멀면 아무 일도 일어나지 않는다 — 아주 약한 접근 성향만 준다.
   const enemies = livingUnits(state, unit.owner === 'p1' ? 'p2' : 'p1');
@@ -238,9 +282,32 @@ function positionValue(state: GameState, unit: UnitInstance, dest: Position, pro
     score -= Math.min(nearest, 12) * 0.2;
   }
 
+  // 힐팩(맵 메이커 지형): 그 칸에 서 있기만 하면 회복 단계에 자동으로 먹는다. 값은 **실제로
+  // 채워지는 양**으로 매긴다 — 그러면 체력이 꽉 찬 기물은 저절로 관심을 끊고(missing이 0), 40짜리
+  // 탱커가 10 힐팩을 보고 전선을 이탈하지도 않는다. 별도의 "지금 회복이 필요한가" 판정이 필요 없다.
+  //
+  // 0.7배인 이유: 회복 1은 피해 1을 되돌리는 값어치지만, 힐팩 칸은 대개 점령지 밖이라 **이 턴의
+  // 위치**를 포기하는 비용이 따라붙는다. 1.0으로 두면 다친 기물이 점령지를 비우고 힐팩을 순회한다.
+  const pack = healPackAt(dest, board);
+  const threat = threatAt(state, unit, dest);
+  if (pack && (state.healPackTimers[key(dest)] ?? 0) <= 0) {
+    const healed = Math.min(pack.amount, Math.max(0, unit.maxHp - unit.currentHp));
+    score += healed * 0.7;
+    // **생존 보너스**: 회복량 자체보다 중요한 건 "이 회복이 죽음을 막는가"다. 3 남은 기물에게
+    // +20은 체력 20어치가 아니라 한 판 내내 쓸 기물 하나를 건지는 값어치다. 공격 쪽 평가가
+    // 킬에 profile.killWeight를 얹는 것과 같은 이유·같은 저울을 쓴다(damageValue 참고).
+    //
+    // 이 항이 없으면 힐팩은 사실상 쓰이지 않는다: 점령지에 서는 값(14 × captureWeight)이 늘
+    // 이기기 때문이다. 실제로 회복량만 보던 판본의 기회 전환율은 3%였다.
+    const pool = unit.currentHp + unit.shieldHp;
+    if (threat > 0 && pool <= threat && pool + healed > threat) {
+      score += profile.killWeight * roleValue(unit);
+    }
+  }
+
   const hpRatio = unit.maxHp > 0 ? unit.currentHp / unit.maxHp : 1;
   const squishiness = getUnitType(unit.typeId).role === 'tank' ? 0.4 : 1;
-  score -= threatAt(state, unit, dest) * profile.threatWeight * squishiness * (1.3 - hpRatio);
+  score -= threat * profile.threatWeight * squishiness * (1.3 - hpRatio);
   return score;
 }
 
@@ -315,6 +382,10 @@ function generateCandidates(state: GameState, unit: UnitInstance, profile: Diffi
   const push = (plan: UnitTurnPlan, dest: Position, bonus = 0) => out.push({ plan, dest, bonus });
 
   push({ baseAction: { kind: 'none' } }, here);
+
+  // 행동불가면 후보가 "아무것도 안 함" 하나뿐이다. 여기서 일찍 끊지 않으면 아래에서 만든 후보를
+  // validation이 전부 걸러내고, AI는 자기 계획이 통째로 버려진 줄도 모른 채 점수만 낭비한다.
+  if (hasActiveEffect(unit, 'stun', turn)) return out;
 
   /** 이번 턴 이동 후보(방향 × 칸수). dealer3은 공격 모드가 켜져 있으면 이동 자체가 불법이다. */
   const moveCandidates: { action: BaseAction; dest: Position }[] = [];
@@ -479,20 +550,33 @@ function generateCandidates(state: GameState, unit: UnitInstance, profile: Diffi
       if (healThere) push({ baseAction: m.action, skillUse: healThere.skillUse }, m.dest, healThere.worth);
     }
 
-    const rootTarget = pickBy(
-      enemies.filter((e) => reaches(here, e, rootSkill, state.board)),
-      (e) => 12 - distanceToCaptureZone(e.position!, state.board),
-    );
+    /**
+     * 구속이 '이동 불가'에서 **'행동 불가'**로 바뀌면서 값어치 계산도 바뀌어야 한다 — 이제 발만
+     * 묶는 게 아니라 그 턴의 공격까지 통째로 지운다. 그래서 "막아 낸 피해"로 값을 매기되, 버프와
+     * **같은 눈금**(피해 1점당 1.5)을 쓴다. 눈금이 다르면 회복·버프·구속 중 무엇을 고를지가
+     * 근거 없는 튜닝값 싸움이 된다.
+     *
+     * 이미 못 쏘는 적(쿨타임 중이거나 애초에 공격 불가)을 묶는 건 예전처럼 발만 묶는 것이므로
+     * 낮은 고정값을 준다 — 그래도 점령지로 가는 걸음을 지우는 값어치는 있다.
+     */
+    const deniedWorth = (e: UnitInstance) => {
+      const def = getUnitType(e.typeId);
+      const canShoot = def.canAttack && (e.cooldowns['basicAttack'] ?? 0) <= 0;
+      const base = canShoot ? plannedAttackPower(e) * 1.5 : 3;
+      // 같은 값이면 점령지에 가까운 쪽을 묶는다(예전 기준을 동점 처리로만 남긴다).
+      return base + (12 - distanceToCaptureZone(e.position!, state.board)) * 0.1;
+    };
+    const rootTarget = pickBy(enemies.filter((e) => reaches(here, e, rootSkill, state.board)), deniedWorth);
     if (rootTarget) {
       const root = { skillId: 'support2_root', target: rootTarget.instanceId };
-      push({ baseAction: { kind: 'none' }, skillUse: root }, here, 5);
+      push({ baseAction: { kind: 'none' }, skillUse: root }, here, deniedWorth(rootTarget));
     }
 
     /**
      * 조준 보조. 회복과 달리 **다치지 않은 아군에게도** 걸리므로 후보 풀이 훨씬 넓다 — 그게 이
      * 기술을 넣은 이유 자체다. 대신 아무에게나 걸면 낭비이므로 두 가지를 거른다:
      *   - 공격을 못 하거나(`canAttack` false, 예: 다른 support2) 기본공격 쿨타임에 걸린 아군
-     *     (dealer1은 한 번 쏘면 3턴을 못 쏜다 — 그 사이 버프를 주면 그대로 버려진다)
+     *     (dealer1은 2발 쏘면 한 턴을 쉰다 — 쉬는 턴에 버프를 주면 그대로 버려진다)
      *   - 적과 너무 멀어 이번 턴에도 다음 턴에도 못 때릴 아군
      * 지속시간이 이번 턴과 다음 턴을 덮으므로(방벽·구속과 같은 규약) 사거리 + 이동력만큼 여유를 준다.
      */

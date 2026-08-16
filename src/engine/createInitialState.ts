@@ -51,6 +51,8 @@ export function createInitialState(
     score: { p1: 0, p2: 0 },
     winner: null,
     lastPriorityOrder: null,
+    // 판 시작 시점에는 모든 힐팩이 차 있다 — 빈 칸 목록이므로 그냥 비워 둔다.
+    healPackTimers: {},
     log: [],
   };
 }

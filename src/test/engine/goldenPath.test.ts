@@ -44,14 +44,16 @@ describe('golden path: draft-like setup through capture win', () => {
     expect(state.log.length).toBeGreaterThan(0);
   });
 
-  it('single p1 occupant in the real capture zone scores 1pt/turn, and reaching WIN_SCORE ends the game', () => {
+  it('two unopposed p1 occupants in the real capture zone score 1pt/turn, and reaching WIN_SCORE ends the game', () => {
     const p1Positions: Position[] = mapDefinition.startZones.p1.slice(0, 5);
     const p2Positions: Position[] = mapDefinition.startZones.p2.slice(0, 5);
     const state = createInitialState(rosterIds, rosterIds, p1Positions, p2Positions, mapDefinition);
 
-    // p1 유닛 한 기를 실제 점령지 중앙으로 순간이동(테스트 편의상 직접 배치)시켜 매 턴 1점씩 쌓이는지 확인.
-    const captureCell = mapDefinition.captureZone[Math.floor(mapDefinition.captureZone.length / 2)];
-    state.units[0].position = captureCell;
+    // p1 유닛 **두 기**를 실제 점령지로 순간이동(테스트 편의상 직접 배치)시켜 매 턴 1점씩 쌓이는지
+    // 확인한다. 두 기인 이유는 CAPTURE_MARGIN이 2라 한 기로는 점수가 나지 않기 때문이다.
+    const mid = Math.floor(mapDefinition.captureZone.length / 2);
+    state.units[0].position = mapDefinition.captureZone[mid];
+    state.units[1].position = mapDefinition.captureZone[mid + 1];
 
     for (let turn = 1; turn <= WIN_SCORE; turn++) {
       resolveTurn(state, emptyPlan(turn, 'p1'), emptyPlan(turn, 'p2'), () => 0.5);

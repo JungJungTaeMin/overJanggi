@@ -2,8 +2,7 @@ import { useMemo, useState } from 'react';
 import type { Owner, Position, UnitInstance } from '../../engine/types';
 import { createUnitInstance } from '../../engine/createInitialState';
 import { getUnitType } from '../../data/unitTypes';
-import { mapDefinition } from '../../data/mapDefinitions';
-import { useGameStore } from '../../store/gameStore';
+import { boardOf, useGameStore } from '../../store/gameStore';
 import { Board } from '../Board/Board';
 
 interface Slot {
@@ -42,6 +41,8 @@ export function PlacementScreen() {
   const confirmPlacement = useGameStore((s) => s.confirmPlacement);
   const mode = useGameStore((s) => s.mode);
   const localOwner = useGameStore((s) => s.localOwner);
+  // 커스텀 맵을 골랐으면 배치도 그 맵 위에서 해야 한다 — 기본 맵의 시작지점은 좌표부터 다르다.
+  const board = boardOf(useGameStore((s) => s.selectedMap));
   // 로컬 대전에서만 한 사람이 양쪽을 배치한다. AI·온라인에서는 내 진영만 찍는다.
   const owners: Owner[] = mode === 'local' ? ['p1', 'p2'] : [localOwner];
   const [active, setActive] = useState<Slot | null>({ owner: owners[0], index: 0 });
@@ -57,7 +58,7 @@ export function PlacementScreen() {
     return units;
   }, [draftPicks, placementPositions]);
 
-  const clickableCells: Position[] = active ? mapDefinition.startZones[active.owner] : [];
+  const clickableCells: Position[] = active ? board.startZones[active.owner] : [];
 
   function handleCellClick(p: Position) {
     if (!active) return;
@@ -82,7 +83,7 @@ export function PlacementScreen() {
     <div className="placement-layout">
       <div className="board-column">
         <h2>배치 — 각 진영 칸을 클릭해 기물을 배치하세요</h2>
-        <Board board={mapDefinition} units={previewUnits} clickableCells={clickableCells} onCellClick={handleCellClick} />
+        <Board board={board} units={previewUnits} clickableCells={clickableCells} onCellClick={handleCellClick} />
         <button onClick={confirmPlacement} disabled={!ready} className="btn-primary" style={{ marginTop: 8, padding: '8px 16px' }}>
           전투 시작
         </button>
