@@ -38,6 +38,7 @@ export function PlacementScreen() {
   const draftPicks = useGameStore((s) => s.draftPicks);
   const placementPositions = useGameStore((s) => s.placementPositions);
   const placeUnit = useGameStore((s) => s.placeUnit);
+  const autoPlace = useGameStore((s) => s.autoPlace);
   const confirmPlacement = useGameStore((s) => s.confirmPlacement);
   const mode = useGameStore((s) => s.mode);
   const localOwner = useGameStore((s) => s.localOwner);
@@ -75,6 +76,12 @@ export function PlacementScreen() {
     }
   }
 
+  /** 내가 배치하는 진영을 모두 자동으로 채운다(로컬 대전이면 양쪽). */
+  function autoPlaceMine() {
+    owners.forEach((owner) => autoPlace(owner));
+    setActive(null); // 남은 자리가 없으니 "지금 놓는 기물" 표시도 지운다
+  }
+
   const ready = placementPositions.p1.every(Boolean) && placementPositions.p2.every(Boolean);
   const mine = placementPositions[localOwner];
   const myTurnDone = mode === 'local' ? ready : mine.length > 0 && mine.every(Boolean);
@@ -84,9 +91,16 @@ export function PlacementScreen() {
       <div className="board-column">
         <h2>배치 — 각 진영 칸을 클릭해 기물을 배치하세요</h2>
         <Board board={board} units={previewUnits} clickableCells={clickableCells} onCellClick={handleCellClick} />
-        <button onClick={confirmPlacement} disabled={!ready} className="btn-primary" style={{ marginTop: 8, padding: '8px 16px' }}>
-          전투 시작
-        </button>
+        <div className="placement-actions">
+          {/* 시작 진형은 어차피 시작지점 3행 안에서만 정해진다 — 다섯 칸을 일일이 찍는 대신
+              탱커 앞줄·원거리 뒷줄이라는 정석 진형을 한 번에 받고, 마음에 안 드는 기물만 다시 찍는다. */}
+          <button type="button" className="btn-secondary" onClick={autoPlaceMine} disabled={myTurnDone}>
+            자동 배치
+          </button>
+          <button onClick={confirmPlacement} disabled={!ready} className="btn-primary" style={{ padding: '8px 16px' }}>
+            전투 시작
+          </button>
+        </div>
         {mode !== 'local' && myTurnDone && !ready && <p className="muted">상대의 배치를 기다리는 중…</p>}
       </div>
       <div style={{ display: 'flex', gap: 24 }}>

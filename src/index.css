@@ -9,6 +9,11 @@
   --panel-bg: #ffffff;
   --page-bg: #f1f5f9;
   --accent: #f59e0b;
+  /* 도움말 그림의 표시 색. 격자(SVG의 fill)와 범례(span의 background)가 같은 값을 써야
+     "범례에서 본 색"과 "그림에서 본 색"이 같다 — 두 군데에 따로 적으면 반드시 갈라진다. */
+  --mark-move: rgba(34, 197, 94, 0.35);
+  --mark-move-extra: rgba(34, 197, 94, 0.14);
+  --mark-heal: #0d9488;
   color-scheme: light;
 }
 
@@ -692,6 +697,17 @@ select, input {
   font-size: 14px;
 }
 
+/* 처음 오는 사람이 눈으로 먼저 찾아야 하는 카드 — 다른 카드보다 한 단계 밝게 둔다. */
+.quick-start-card {
+  border-color: var(--accent);
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.12), var(--panel-bg));
+}
+
+.btn-quick-start {
+  padding: 12px 22px;
+  font-size: 16px;
+}
+
 .difficulty-row {
   display: flex;
   gap: 10px;
@@ -820,6 +836,441 @@ select, input {
   font-size: 13px;
 }
 
+/* 지금 어떤 편성 규칙으로 고르고 있는지 — 드래프트 화면에 없으면 버튼이 왜 잠겼는지 알 수 없다. */
+.draft-rule-note {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.draft-rule-warning {
+  margin: 12px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--danger, #dc2626);
+}
+
+.draft-quota {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* 제목과 버튼을 한 줄에 둔다 — 기물 목록 위 첫 줄이라 스크롤 없이 바로 보인다. */
+.draft-column-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.draft-column-head h3 {
+  margin: 0;
+}
+
+/* 다섯 번 고르는 대신 한 번. `.draft-column button`(width:100%)은 아래 기물 목록용이라
+   여기서 되돌려야 하는데, 선택자 특정도가 같으면 지므로 부모까지 붙여 이긴다. */
+.draft-column-head .btn-auto-fill {
+  width: auto;
+  flex: none;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.placement-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+/* 버튼 안에 적는 단축키 표시 — 라벨보다 눈에 덜 띄어야 한다. */
+.key-hint {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.22);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* ---------- 도움말(게임 방법) ---------- */
+
+.app-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.app-head .app-title {
+  margin: 0;
+}
+
+.quick-start-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.guide-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  justify-content: center;
+  padding: 24px 16px;
+  overflow-y: auto;
+}
+
+.guide-panel {
+  background: var(--page-bg);
+  border-radius: 12px;
+  max-width: 1040px;
+  width: 100%;
+  height: fit-content;
+  padding: 20px 24px 24px;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.3);
+}
+
+.guide-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: -20px;
+  /* 긴 문서라 닫기 버튼이 위로 스크롤돼 사라지면 나가는 길을 잃는다. */
+  background: var(--page-bg);
+  padding: 4px 0 10px;
+  margin-bottom: 4px;
+  z-index: 1;
+}
+
+.guide-head h2 {
+  margin: 0;
+}
+
+/* 닫기 버튼의 Esc 표시는 밝은 바탕 위에 얹히므로 버튼 안 단축키와 명암이 반대다. */
+.guide-head .key-hint,
+.guide-controls .key-hint {
+  background: rgba(15, 23, 42, 0.08);
+  color: var(--muted);
+  margin-left: 4px;
+}
+
+.guide-section {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin-bottom: 14px;
+}
+
+.guide-section > p {
+  margin: 0 0 10px;
+  line-height: 1.65;
+  font-size: 14px;
+}
+
+.guide-split {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.guide-split > div {
+  flex: 1 1 380px;
+}
+
+.guide-split p {
+  margin: 0 0 10px;
+  line-height: 1.65;
+  font-size: 14px;
+}
+
+.guide-note {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  background: rgba(245, 158, 11, 0.08);
+  border-radius: 0 6px 6px 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.swatch-capture {
+  border-bottom: 3px solid rgba(245, 158, 11, 0.65);
+}
+
+.swatch-start {
+  border-bottom: 3px solid rgba(37, 99, 235, 0.45);
+}
+
+/* 턴 5단계 — 순서가 규칙의 핵심이라 번호를 크게 남긴다. */
+.guide-phases {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+}
+
+.guide-phases li {
+  flex: 1 1 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.guide-phase-no {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.guide-phases em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.guide-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.guide-examples figure {
+  margin: 0;
+  text-align: center;
+}
+
+.guide-examples figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.guide-example-count {
+  font-weight: 700;
+}
+
+.guide-example-win {
+  font-weight: 600;
+}
+
+.guide-example-p1 {
+  color: var(--p1);
+}
+
+.guide-example-p2 {
+  color: var(--p2);
+}
+
+.guide-example-draw {
+  color: var(--muted);
+}
+
+.guide-legend {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 0;
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.guide-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  display: inline-block;
+}
+
+/* 범례는 SVG가 아니라 span이라 fill이 듣지 않는다 — 같은 변수를 background로 다시 건다. */
+.legend-swatch.mark-move { background: var(--mark-move); }
+.legend-swatch.mark-move-extra { background: var(--mark-move-extra); }
+
+.legend-dot {
+  border: none;
+  background: radial-gradient(circle at center, var(--p2) 0 4px, transparent 4px);
+}
+
+.legend-ring {
+  background: none;
+  border: 2px solid var(--mark-heal);
+}
+
+.guide-unit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.guide-unit-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.guide-unit-card header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: stretch;
+  margin-bottom: 8px;
+}
+
+.guide-unit-card h4 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.guide-role {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  color: var(--muted);
+}
+
+.guide-role-tank { background: #e0e7ff; color: #3730a3; }
+.guide-role-dealer { background: #fee2e2; color: #991b1b; }
+.guide-role-support { background: #d1fae5; color: #065f46; }
+
+.guide-stats {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  margin: 10px 0 0;
+  align-self: stretch;
+  font-size: 12px;
+}
+
+.guide-stats > div {
+  display: contents;
+}
+
+.guide-stats dt {
+  color: var(--muted);
+}
+
+.guide-stats dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.guide-skills {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.guide-skills li {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+  line-height: 1.5;
+}
+
+.guide-skill-gate {
+  font-size: 11px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.guide-skill-text {
+  color: var(--muted);
+}
+
+.guide-controls {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* 줄 앞의 항목 이름만 폭을 맞춰 열처럼 보이게 한다. `strong` 전체에 걸면 설명 안에서 강조한
+   낱말("한 방향 직진")까지 96px 상자가 돼 문장 한가운데에 빈칸이 뚫린다. */
+.guide-controls > li > strong:first-child {
+  display: inline-block;
+  min-width: 96px;
+}
+
+.guide-foot {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+/* ---------- 도움말 축소 보드 ---------- */
+
+.mini-board {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+  flex: none;
+}
+
+.mini-cell {
+  fill: #fff;
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.mini-obstacle { fill: #94a3b8; }
+.mini-capture { fill: rgba(245, 158, 11, 0.3); }
+.mini-start-p1 { fill: rgba(37, 99, 235, 0.18); }
+.mini-start-p2 { fill: rgba(220, 38, 38, 0.18); }
+
+.mark-move { fill: var(--mark-move); }
+/* 조건이 맞아야만 닿는 칸 — 확실히 갈 수 있는 칸보다 옅어야 한다. */
+.mark-move-extra { fill: var(--mark-move-extra); }
+.mark-attack { fill: var(--p2); }
+.mark-heal { stroke: var(--mark-heal); stroke-width: 2; }
+
 /* ---------- 맵 메이커 ---------- */
 
 .mode-banner-map {
@@ -829,14 +1280,17 @@ select, input {
   color: var(--text, #0f172a);
 }
 
-.map-choice-row {
+/* 편성 규칙 고르는 칸도 "카드 두 장 중 하나를 고른다"는 같은 모양이라 맵 선택 스타일을 같이 쓴다. */
+.map-choice-row,
+.rule-choice-row {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
   margin-bottom: 12px;
 }
 
-.map-choice {
+.map-choice,
+.rule-choice {
   flex: 1 1 180px;
   display: flex;
   flex-direction: column;
@@ -851,13 +1305,15 @@ select, input {
   font: inherit;
 }
 
-.map-choice span {
+.map-choice span,
+.rule-choice span {
   font-size: 12px;
   color: var(--muted);
 }
 
 /* 고른 맵은 테두리만으로는 잘 안 보인다 — 배경까지 바꿔 "이걸로 시작된다"를 분명히 한다. */
-.map-choice.active {
+.map-choice.active,
+.rule-choice.active {
   border-color: #2563eb;
   background: #eff6ff;
 }

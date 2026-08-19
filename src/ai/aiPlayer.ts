@@ -11,7 +11,8 @@ import type {
   UnitInstance,
   UnitTurnPlan,
 } from '../engine/types';
-import { getUnitType, unitTypes } from '../data/unitTypes';
+import { getUnitType } from '../data/unitTypes';
+import { DEFAULT_ROSTER_RULE, randomRoster, rosterRuleOf, type RosterRuleId } from '../data/rosterRules';
 import {
   DIAGONAL_DIRECTIONS,
   ORTHOGONAL_DIRECTIONS,
@@ -698,23 +699,43 @@ export function aiActionPlan(
 /**
  * 드래프트. 난이도가 올라갈수록 조합의 짜임새가 좋아진다 —
  * 쉬움은 무작위라 지원 기물이 하나도 없는 편성이 나오기도 한다.
+ *
+ * **편성 규칙별로 표를 따로 둔다.** 자유 편성용 조합을 탱커 1명 고정에 그대로 쓰면 규칙 위반이라
+ * 사람은 못 고르는 편성을 AI만 내게 되고, 반대로 자동으로 탱커 하나를 빼 버리면 "빠진 자리를 무엇으로
+ * 메울지"가 코드 어디에도 안 적힌 채 정해진다. 규칙이 바뀌면 조합의 전제(누가 앞에서 맞아 주는가)가
+ * 통째로 바뀌므로, 조합은 규칙마다 손으로 적는 게 맞다.
  */
-const DRAFT_PRESETS: Record<AiDifficulty, string[]> = {
-  easy: [],
-  // 보통: 전방 탱커 둘 + 안정적인 화력 + 회복.
-  normal: ['tank1', 'tank3', 'dealer1', 'dealer4', 'support1'],
-  // 어려움: 점령지를 밀어붙일 돌진 + 최대 화력(공격모드) + 원거리 회복.
-  hard: ['tank1', 'tank2', 'dealer3', 'dealer1', 'support1'],
+const DRAFT_PRESETS: Record<RosterRuleId, Record<AiDifficulty, string[]>> = {
+  free: {
+    easy: [],
+    // 보통: 전방 탱커 둘 + 안정적인 화력 + 회복.
+    normal: ['tank1', 'tank3', 'dealer1', 'dealer4', 'support1'],
+    // 어려움: 점령지를 밀어붙일 돌진 + 최대 화력(공격모드) + 원거리 회복.
+    hard: ['tank1', 'tank2', 'dealer3', 'dealer1', 'support1'],
+  },
+  oneTank: {
+    easy: [],
+    // 보통: 방벽으로 전선을 버티고 뒤를 포탑·회복으로 지탱한다. 탱커가 하나뿐이라 뒷줄이 두꺼워야 한다.
+    normal: ['tank3', 'dealer1', 'dealer4', 'support1', 'support3'],
+    /**
+     * 어려움: 탱커 1명 고정 측정(1000판, 두 맵)에서 상위권이던 조합이다 — 돌진·기동형(정원 53.4% /
+     * 사용자 맵 54.1%)으로 전선을 만들고, 측면 교란형(62.5% / 57.5%)·시간 역행형(53.5% / 52.7%)·
+     * 충전 사격형(52.6% / 48.6%)이 화력을 맡고 범위 회복형이 뒤를 받친다. 자유 편성 조합에서
+     * 방어 강화형을 뺀 자리를 메운 셈인데, 그 기물이 이 규칙의 사용자 맵에서 꼴찌(42.8%)였다.
+     */
+    hard: ['tank2', 'dealer4', 'dealer2', 'dealer3', 'support1'],
+  },
 };
 
-export function aiDraftPicks(difficulty: AiDifficulty, rngFn: RngFn = Math.random): string[] {
-  const preset = DRAFT_PRESETS[difficulty];
+export function aiDraftPicks(
+  difficulty: AiDifficulty,
+  rngFn: RngFn = Math.random,
+  ruleId: RosterRuleId = DEFAULT_ROSTER_RULE,
+): string[] {
+  const preset = DRAFT_PRESETS[rosterRuleOf(ruleId).id][difficulty];
   if (preset.length === ROSTER_SIZE) return [...preset];
-  const picks: string[] = [];
-  while (picks.length < ROSTER_SIZE) {
-    picks.push(unitTypes[Math.floor(rngFn() * unitTypes.length)].id);
-  }
-  return picks;
+  // 쉬움은 무작위 편성이다 — 규칙을 지키는 추첨은 편성 규칙 쪽이 유일한 근거다.
+  return randomRoster(rngFn, ruleId);
 }
 
 /**

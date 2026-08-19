@@ -1,9 +1,10 @@
 import type { GameState, Owner, Position, ResolutionEvent, UnitInstance } from '../types';
 import type { RngFn } from '../rng';
-import { CAPTURE_MARGIN, WIN_SCORE } from '../../data/constants';
+import { WIN_SCORE } from '../../data/constants';
 import { getUnitType, maxHpFor } from '../../data/unitTypes';
+import { captureCounts, captureWinner } from '../capture';
 import { initCharges } from '../createInitialState';
-import { inBounds, isObstacle, isOccupied, isInCaptureZone, key, step } from '../grid';
+import { inBounds, isObstacle, isOccupied, key, step } from '../grid';
 import { hasActiveEffect, isEffectActive, pruneExpiredEffects } from '../statusEffects';
 
 /** 부활 지점 탐색 순서: 좌→우→상→하(판단 필요 항목 재검토, 시작지점 인접 칸 탐색 순서 기본값) */
@@ -194,35 +195,11 @@ export function resolveEndOfTurn(state: GameState, rngFn: RngFn, log: Resolution
   }
   respawnUnits(state, respawningNow, rngFn, log);
 
-  // 7) 점령 점수 — **인원 차 점령, 턴당 최대 1점**. 생존 유닛(기절·구속 포함, 사망 제외)을
-  // 팀별로 센 뒤, 다음 둘 중 하나면 그 팀이 1점을 얻는다:
-  //   · 상대가 **아예 없다**(무저항) — 1:0도 점수가 난다.
-  //   · 상대가 있다면 CAPTURE_MARGIN명 **이상 앞선다** — 2:1은 경합(0점), 3:1부터 점수.
-  // 몇 명 더 많은지는 점수 크기에 영향을 주지 않는다 — 3:1이든 5:0이든 똑같이 1점이다.
-  //
-  // 무저항을 예외로 두는 이유: 아무도 지키지 않는 점령지를 한 기물이 차지했는데 0점이면, 상대가
-  // 전멸했거나 완전히 물러난 판이 진행되지 않고 멈춘다. 인원 차 기준은 **막는 쪽이 있을 때**
-  // 비로소 의미가 있는 규칙이다.
-  //
-  // 기획서 5장 원문은 "양 팀이 함께 있으면 무조건 경합 0점"이었는데, 그러면 양쪽이 점령지에
-  // 들어간 순간 아무도 점수를 못 내고 그 상태가 스스로 유지된다 — 200판 시뮬레이션에서 17.5%가
-  // 끝나지 않았고, 그 판들의 선두 팀 평균 점수는 300턴을 돌려도 10점 만점에 1.6점이었다.
-  // 느린 판이 아니라 완전 교착이라 기물 스탯으로는 풀 수 없었다.
-  //
-  // 그래서 승자 판정을 인원수가 아니라 **인원 차**로 바꿨다. 양쪽이 함께 있어도 병력을 더 밀어
-  // 넣을 이유가 생겨 교착이 풀린다. 차이 기준을 1이 아니라 2로 둔 것은 "한 명 슬쩍 더 넣기"로
-  // 점령이 굴러가지 않게 하려는 것이다 — 수비 한 명이 공격 두 명을 묶어 두는 값을 갖는다.
-  const owners: Owner[] = ['p1', 'p2'];
-  const counts: Record<Owner, number> = { p1: 0, p2: 0 };
-  for (const unit of state.units) {
-    if (!unit.alive || !unit.position || unit.isTurret) continue; // 포탑은 편성 기물이 아니라 점령에 안 센다
-    if (isInCaptureZone(unit.position, state.board)) counts[unit.owner] += 1;
-  }
-  const [a, b] = owners;
-  const leader = counts[a] > counts[b] ? a : b;
-  const follower = leader === a ? b : a;
-  const needed = counts[follower] === 0 ? 1 : counts[follower] + CAPTURE_MARGIN;
-  if (counts[leader] >= needed) state.score[leader] += 1;
+  // 7) 점령 점수 — 규칙 자체는 engine/capture.ts 한 곳에만 적혀 있다(도움말 화면이 같은 함수를
+  //    부르므로 설명과 실제 조건이 갈라지지 않는다). 생존 유닛만 세며 기절·구속은 세는 데 영향이 없다.
+  const counts = captureCounts(state);
+  const scorer = captureWinner(counts);
+  if (scorer) state.score[scorer] += 1;
 
   log.push({ phase: 'endOfTurn', type: 'score', detail: { p1: state.score.p1, p2: state.score.p2, p1Count: counts.p1, p2Count: counts.p2 } });
 

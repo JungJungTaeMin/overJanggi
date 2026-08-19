@@ -3,14 +3,17 @@ import { useGameStore } from '../../store/gameStore';
 import { DIFFICULTY_ORDER, DIFFICULTY_PROFILES } from '../../ai/difficulty';
 import { hostRoom, joinRoom, leaveOnline } from '../../online/netBridge';
 import { MapPicker } from '../MapMaker/MapPicker';
+import { RosterRulePicker } from './RosterRulePicker';
 
 /**
  * 시작 화면 — 무엇을 상대할지 고른다.
  * 온라인은 방을 연 쪽이 호스트(p1)이고, 코드로 들어온 쪽이 게스트(p2)다.
  */
-export function ModeMenu() {
+export function ModeMenu({ onOpenGuide }: { onOpenGuide: () => void }) {
   const startLocal = useGameStore((s) => s.startLocal);
   const startAi = useGameStore((s) => s.startAi);
+  const quickStart = useGameStore((s) => s.quickStart);
+  const aiDifficulty = useGameStore((s) => s.aiDifficulty);
   const online = useGameStore((s) => s.online);
   const [code, setCode] = useState('');
   const [copied, setCopied] = useState(false);
@@ -31,9 +34,30 @@ export function ModeMenu() {
 
   return (
     <div className="mode-menu">
-      {/* 맵을 맨 위에 둔다 — 모드 버튼을 누르면 곧바로 드래프트로 넘어가므로, 아래에 있으면
-          맵을 고르기 전에 판이 시작돼 버린다. */}
+      {/* 처음 온 사람이 눌러야 할 단 하나의 버튼. 편성·배치는 규칙을 익히기 전에는 무슨 선택인지도
+          모르는 채 12번을 눌러야 하는 구간이라, 기본 경로에서는 통째로 건너뛴다. */}
+      <section className="mode-card quick-start-card">
+        <h2>바로 시작</h2>
+        <p>
+          추천 편성과 자동 배치로 <strong>AI {DIFFICULTY_PROFILES[aiDifficulty].label}</strong> 대전을 곧장
+          시작합니다. 편성과 배치를 직접 고르고 싶으면 아래 모드를 고르세요.
+        </p>
+        <div className="quick-start-row">
+          <button className="btn-primary btn-quick-start" onClick={quickStart}>
+            클릭 한 번으로 시작
+          </button>
+          {/* 규칙을 아예 모르는 사람에게는 "시작" 옆이 유일하게 눈에 들어오는 자리다. */}
+          <button type="button" className="btn-secondary" onClick={onOpenGuide}>
+            처음이신가요? 게임 방법 보기
+          </button>
+        </div>
+      </section>
+
+      {/* 맵을 모드 버튼보다 위에 둔다 — 모드 버튼을 누르면 곧바로 판이 시작되므로, 아래에 있으면
+          맵을 고르기 전에 시작돼 버린다. */}
       <MapPicker />
+      {/* 규칙도 같은 이유로 위에 있어야 한다. */}
+      <RosterRulePicker />
 
       <section className="mode-card">
         <h2>로컬 대전</h2>

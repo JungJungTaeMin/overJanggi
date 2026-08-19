@@ -16,7 +16,10 @@ import { resolveTurn } from '../src/engine/resolveTurn';
 import { aiActionPlan, aiPlacement } from '../src/ai/aiPlayer';
 import { seededRng } from '../src/engine/rng';
 import { unitTypes } from '../src/data/unitTypes';
-import { ROSTER_SIZE, WIN_SCORE } from '../src/data/constants';
+// 추첨은 게임의 편성 규칙과 **같은 함수**를 쓴다 — 시뮬레이터가 따로 뽑으면 여기서 잰 숫자가
+// 실제 대전에서 벌어지는 일과 조용히 갈라진다.
+import { randomRosterWithQuota } from '../src/data/rosterRules';
+import { WIN_SCORE } from '../src/data/constants';
 import { validateMap } from '../src/maps/mapModel';
 import { loadBoard, renderBoard } from './loadMap';
 import type { AiDifficulty } from '../src/ai/difficulty';
@@ -46,6 +49,11 @@ const MAX_TURNS = Number(POSITIONAL[2] ?? 80);
  * 순위 자체를 바꿀 수 있다. 예컨대 방벽·제어형은 다른 탱커가 앞에서 맞아 주는 걸 전제로 한
  * 기물인데, 그 전제가 사라지면 같은 스탯이어도 다른 기물이 된다. 스탯을 건드리지 않고 규칙만
  * 바꿔서 재는 게 목적이므로 유닛 데이터가 아니라 시뮬레이터 인자로 뺀다.
+ *
+ * 이 중 `1`은 게임의 **'탱커 1명 고정' 편성 규칙**과 같은 조건이다(src/data/rosterRules.ts) —
+ * 추첨 자체도 그 파일 함수를 그대로 쓴다. 여기서 잰 숫자가 실제 대전에서 벌어지는 일과 달라지면
+ * 측정할 값어치가 없기 때문이다. 여전히 인자인 이유는 0·2·3처럼 게임에 없는 조건도 재야
+ * "탱커 수에 따라 이 기물이 어떻게 변하는가"라는 곡선이 나오기 때문이다.
  */
 const TANK_QUOTA = POSITIONAL[3] === undefined || POSITIONAL[3] === 'free' ? null : Number(POSITIONAL[3]);
 /**
@@ -77,9 +85,6 @@ const BASE_MAP_ARG = POSITIONAL[5];
  */
 const BASE_RULE_ARG = flag('기준편성');
 
-const TANKS = unitTypes.filter((t) => t.role === 'tank');
-const NON_TANKS = unitTypes.filter((t) => t.role !== 'tank');
-
 const { name: mapName, board } = loadBoard(MAP_ARG);
 // 저장 버튼이 쓰는 것과 **같은 검사**를 통과해야 한다. 실제로 대전에 못 쓰는 맵의 밸런스를
 // 재 봐야 그 숫자를 적용할 데가 없다.
@@ -105,24 +110,7 @@ const stats = new Map<string, Stat>();
 const blank = (): Stat => ({ games: 0, wins: 0, draws: 0, damage: 0, kills: 0, deaths: 0, healing: 0, zoneTurns: 0 });
 for (const t of unitTypes) stats.set(t.id, blank());
 
-function randomRoster(rng: () => number): string[] {
-  if (TANK_QUOTA === null) {
-    return Array.from({ length: ROSTER_SIZE }, () => unitTypes[Math.floor(rng() * unitTypes.length)].id);
-  }
-  // 할당량만큼 탱커에서, 나머지는 비탱커에서 뽑는다. 둘 다 **복원추출**이다 — 자유 편성 쪽도
-  // 같은 기물을 2기 넣을 수 있으므로, 여기서만 중복을 막으면 두 조건을 비교할 수 없게 된다.
-  const roster = [
-    ...Array.from({ length: TANK_QUOTA }, () => TANKS[Math.floor(rng() * TANKS.length)].id),
-    ...Array.from({ length: ROSTER_SIZE - TANK_QUOTA }, () => NON_TANKS[Math.floor(rng() * NON_TANKS.length)].id),
-  ];
-  // 배치(aiPlacement)가 편성 순서를 보므로 섞는다. 안 섞으면 탱커가 항상 같은 자리에서 시작해
-  // "탱커 1명 제한"이 아니라 "탱커를 특정 위치에 고정"을 재는 꼴이 된다.
-  for (let i = roster.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [roster[i], roster[j]] = [roster[j], roster[i]];
-  }
-  return roster;
-}
+const randomRoster = (rng: () => number) => randomRosterWithQuota(rng, TANK_QUOTA);
 
 let p1Wins = 0;
 let p2Wins = 0;
@@ -217,7 +205,13 @@ const rows = [...stats.entries()]
   }))
   .sort((a, b) => b.points - a.points);
 
-/** 편성 규칙의 표시 이름. 기록 키에도 그대로 쓰이므로 이 함수가 유일한 근거여야 한다. */
+/**
+ * 편성 규칙의 표시 이름. 기록 키에도 그대로 쓰이므로 이 함수가 유일한 근거여야 한다.
+ *
+ * 0·2·3처럼 게임에 없는 할당량도 재므로 게임 쪽 이름표(rosterRules.ts)를 그대로 쓸 수는 없다.
+ * 다만 겹치는 두 값(`null`·`1`)은 **글자까지 같아야 한다** — 여기 쌓인 기록의 키가 곧 그 문자열이라,
+ * 이름을 바꾸면 예전 기준선과 이어지지 않고 증감 칸이 통째로 비어 버린다.
+ */
 const ruleLabel = (quota: number | null) => (quota === null ? '자유 편성' : `탱커 ${quota}명 고정`);
 const rule = ruleLabel(TANK_QUOTA);
 const baseRule = BASE_RULE_ARG === undefined ? rule : ruleLabel(BASE_RULE_ARG === 'free' ? null : Number(BASE_RULE_ARG));

@@ -54,7 +54,10 @@ function startHostBroadcast(): void {
       s.plans !== prev.plans ||
       s.draftPicks !== prev.draftPicks ||
       s.placementPositions !== prev.placementPositions ||
-      s.lastLog !== prev.lastLog;
+      s.lastLog !== prev.lastLog ||
+      // 규칙·맵은 메뉴에서만 바뀌지만, 연결 뒤에 호스트가 메뉴로 돌아가 바꾸고 다시 시작할 수 있다.
+      s.rosterRule !== prev.rosterRule ||
+      s.selectedMap !== prev.selectedMap;
     if (changed) send({ kind: 'snapshot', snapshot: storeSnapshot() });
   });
 }

@@ -151,6 +151,23 @@ export function movePlanCursor(
 }
 
 /**
+ * 이 계획에 **아직 찍지 않은 이동 구간**이 남아 있는지.
+ *
+ * 보드 클릭 한 번은 구간 하나만 채운다. 그래서 dealer2 시간역행처럼 이동을 여러 번 얻은 기물은
+ * 한 번 클릭했다고 계획이 끝난 게 아니다 — "행동을 정했으니 다음 기물로 넘긴다"는 판단은
+ * 반드시 이 함수를 거쳐야 남은 구간을 찍을 기회를 뺏지 않는다.
+ */
+export function hasPendingMoveSegment(unit: UnitInstance, plan: UnitTurnPlan, turnNumber: number): boolean {
+  if (!unit.position) return false;
+  const capacities = moveSegmentCapacities(unit, plan.skillUse, sumMagnitude(unit, 'moveBonus', turnNumber));
+  const path = resolveMovePath(unit, plan, moveCapacity(unit, turnNumber, plan));
+  const segLengths = resolveSegmentLengths(unit, plan, path.length);
+  // 기본 행동이 공격이면 기본 이동 구간(0번)은 애초에 쓸 수 없으므로 "안 찍은 구간"이 아니다.
+  const firstEditable = isSkillMovePlanning(plan) ? 1 : 0;
+  return capacities.some((cap, i) => i >= firstEditable && cap > 0 && (segLengths[i] ?? 0) === 0);
+}
+
+/**
  * 추가 이동 구간의 보드 클릭 후보 — 방향마다 **딱 한 칸**(이동 Lv만큼 간 칸, 장애물·판 끝에
  * 막히면 그 앞 칸)만 내놓는다. 칸수를 고를 수 없다는 규칙을 보드 쪽에서도 그대로 지키기 위해서다.
  */
