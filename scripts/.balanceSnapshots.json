@@ -1,17 +1,17 @@
 {
   "hard/자유 편성/80턴": {
-    "label": "2026-08-20 · 300판",
+    "label": "2026-08-21 · 1000판",
     "points": {
-      "dealer4": 62.7,
-      "tank2": 58.1,
-      "dealer1": 52.11,
-      "dealer3": 51.41,
-      "dealer2": 50,
-      "tank3": 49.39,
-      "support2": 48.51,
-      "support1": 46.38,
-      "support3": 44.96,
-      "tank1": 44.31
+      "dealer4": 60.07,
+      "tank2": 54.65,
+      "dealer3": 53.41,
+      "tank3": 50.24,
+      "dealer1": 50.06,
+      "dealer2": 47.94,
+      "support1": 47.54,
+      "support2": 47.32,
+      "tank1": 45.52,
+      "support3": 45.3
     }
   },
   "normal/자유 편성/80턴": {

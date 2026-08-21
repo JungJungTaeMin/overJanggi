@@ -381,6 +381,16 @@ export const unitTypes: UnitTypeDef[] = [
  * - **움직이지 않는다**: moveSpeed 0. 계획 자체가 들어오지 않지만(plansForTurn/ActionPanel이
  *   isTurret으로 거른다) 설령 들어와도 이동 상한이 0이라 제자리다.
  * - **팀당 1기**(판 전체 최대 2기). 새로 세우면 그 팀의 기존 포탑이 철거된다(turnStart.ts).
+ *
+ * **체력 1 → 8**(기획서 원문은 1). 원래 의도는 support3(하위권)을 살리는 것이었고 그건 실패했다 —
+ * 포탑 회복 총량이 +13.7% 늘었는데 support3 승점률은 44.9 → 45.3%로 사실상 제자리였다(1000판,
+ * 시드 짝지음). 이 저장소에서 "회복량이 승리로 환산되지 않는다"가 확인된 세 번째 사례다
+ * (앞선 둘은 support2의 사거리 4→12, 힐량 8→25 스윕 — 아래 support2 주석 참고).
+ *
+ * 그런데도 8을 채택한 이유는 **전체편차**다. 1위−10위 격차가 16.1 → 14.8%p로 측정 이래 최소치가
+ * 됐다. 회복이 늘어 상위권 폭딜 기물이 눌린 결과이고(측면 교란형 61.0 → 60.1%), 목적과 다른
+ * 이유로 채택한 값이라는 걸 여기 적어 둔다 — 나중에 "support3을 위한 값"으로 오해하고 되돌리면
+ * 편차만 다시 벌어진다.
  */
 export const turretType: UnitTypeDef = {
   id: 'turret',
@@ -388,7 +398,7 @@ export const turretType: UnitTypeDef = {
   role: 'support',
   moveSpeed: 0,
   hpLv: 0,
-  fixedMaxHp: 1,
+  fixedMaxHp: 8,
   attack: 0,
   attackShape: { kind: 'aoe', range: 0, axis: 'orthogonal' },
   diagonalMove: false,
