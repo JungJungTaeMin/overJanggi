@@ -294,5 +294,15 @@ if (drawScores.length > 0) {
   const avg = drawScores.reduce((a, b) => a + b, 0) / drawScores.length;
   console.log(`\n무승부 ${drawScores.length}판의 최고 점수 평균 ${avg.toFixed(1)} / ${WIN_SCORE}`);
 }
-console.log(`\n포탑: 생성 ${turretSpawns}회 · 회복 총 ${turretHeal}`);
+// 포탑은 총량만으로는 읽히지 않는다 — 생성당 회복량이 "한 번 세운 포탑이 얼마나 값어치를
+// 했는가"이고, 이게 낮으면 포탑이 금방 죽거나 아군이 곁에 없다는 뜻이다. 두 원인은 처방이 다르다.
+{
+  const perSpawn = turretSpawns ? turretHeal / turretSpawns : 0;
+  const support3Games = rows.find((r) => r.id === 'support3')?.games ?? 0;
+  const perSupport3Game = support3Games ? turretHeal / support3Games : 0;
+  console.log(
+    `\n포탑: 생성 ${turretSpawns}회 · 회복 총 ${turretHeal} · ` +
+      `생성당 ${perSpawn.toFixed(1)} · 확률·포탑형 편성판당 ${perSupport3Game.toFixed(1)}`,
+  );
+}
 console.log();
