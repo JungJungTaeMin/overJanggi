@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { resolveTurn } from '../../engine/resolveTurn';
 import { addUnit, emptyPlan, emptyState, plan, rngFor } from './helpers';
+import { RESPAWN_TURNS } from '../../data/constants';
 
 const REWIND = 'dealer2_rewind_move';
 
@@ -229,7 +230,11 @@ describe('dealer2 time rewind', () => {
     expect(dealer2.rewindSnapshot).toBeNull(); // 되돌아갈 과거가 사라진다
     expect(dealer2.charges[REWIND]).toBe(2); // 충전은 부활 전까지 그대로
 
-    resolveTurn(state, emptyPlan('p1', 2), emptyPlan('p2', 2), rngFor('p1'));
+    // 부활까지 남은 턴종료 틱을 모두 돌린다 — RESPAWN_TURNS를 조정해도 따라오도록 숫자를 박지 않는다.
+    for (let i = 0; i < RESPAWN_TURNS - 1; i++) {
+      const turn = 2 + i;
+      resolveTurn(state, emptyPlan('p1', turn), emptyPlan('p2', turn), rngFor('p1'));
+    }
 
     expect(dealer2.alive).toBe(true);
     expect(dealer2.charges[REWIND]).toBe(3);

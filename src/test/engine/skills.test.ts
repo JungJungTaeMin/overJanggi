@@ -2,12 +2,25 @@ import { describe, expect, it } from 'vitest';
 import { resolveTurn } from '../../engine/resolveTurn';
 import { unitTypes } from '../../data/unitTypes';
 import { addUnit, emptyPlan, emptyState, plan, rngFor } from './helpers';
+import { RESPAWN_TURNS } from '../../data/constants';
 
 /**
  * 공격력을 숫자로 박지 않는 이유: 여기서 재는 건 "10만큼 깎였다"가 아니라 **공격이 나갔는가**다.
  * 밸런스 조정으로 바뀌는 값을 테스트에 박아 두면 규칙이 멀쩡한데도 테스트가 깨진다.
  */
 const DEALER3_ATTACK = unitTypes.find((t) => t.id === 'dealer3')!.attack;
+
+/**
+ * 사망한 유닛이 부활할 때까지 남은 턴종료 틱을 모두 돌린다. `RESPAWN_TURNS`를 조정해도
+ * 테스트가 따라오도록 숫자를 박지 않는다 — 여기서 재는 건 "정확히 2턴"이 아니라
+ * **"상수가 말하는 턴 수만큼 지나야 부활한다"**는 규칙이다.
+ */
+function advanceUntilRespawn(state: ReturnType<typeof emptyState>, fromTurn: number): void {
+  for (let i = 0; i < RESPAWN_TURNS - 1; i++) {
+    const turn = fromTurn + i;
+    resolveTurn(state, emptyPlan('p1', turn), emptyPlan('p2', turn), rngFor('p1'));
+  }
+}
 
 describe('skills and status effects', () => {
   it('a barrier granted this turn blocks an incoming attack this same turn and persists (not consumed)', () => {
@@ -200,13 +213,18 @@ describe('skills and status effects', () => {
     expect(tank3.alive).toBe(false);
     expect(tank3.cooldowns['tank3_root']).toBe(4); // preAttack에서 5로 설정된 직후, 같은 턴 턴종료에서 사망 중에도 1 감소
 
-    resolveTurn(state, emptyPlan('p1', 2), emptyPlan('p2', 2), rngFor('p1'));
+    advanceUntilRespawn(state, 2);
 
-    expect(tank3.alive).toBe(true); // 사망 2턴종료 뒤 부활
-    expect(tank3.cooldowns['tank3_root']).toBe(3); // 감소는 계속됐지만 부활로 초기화되지 않음
+    expect(tank3.alive).toBe(true); // RESPAWN_TURNS번째 턴종료에 부활
+    // 감소는 사망 중에도 계속됐고 부활이 이를 되돌리지 않는다(§8). 쿨타임이 0에 닿으면 키 자체가
+    // 지워지므로 `?? 0`으로 받는다 — RESPAWN_TURNS가 5 이상이면 부활 전에 자연 만료된다.
+    expect(tank3.cooldowns['tank3_root'] ?? 0).toBe(Math.max(0, 5 - RESPAWN_TURNS));
+    // 위 값은 RESPAWN_TURNS가 크면 0이라 "초기화됨"과 구별되지 않는다. 초기화 여부 자체는
+    // 이 어서션이 가른다 — 부활이 쿨타임을 되돌렸다면 5로 돌아가 있을 것이다.
+    expect(tank3.cooldowns['tank3_root'] ?? 0).not.toBe(5);
   });
 
-  it('respawns a dead unit exactly two end-of-turn ticks after death', () => {
+  it('respawns a dead unit exactly RESPAWN_TURNS end-of-turn ticks after death', () => {
     const state = emptyState();
     const victim = addUnit(state, 'support2', 'p1', { x: 4, y: 0 }); // maxHp 15(hpLv3×5) — 8뎀 한방으론 안 죽으므로 낮춰서 사망을 강제한다
     victim.currentHp = 5;
@@ -219,9 +237,9 @@ describe('skills and status effects', () => {
       rngFor('p1'),
     );
     expect(victim.alive).toBe(false);
-    expect(victim.respawnTurnsRemaining).toBe(1);
+    expect(victim.respawnTurnsRemaining).toBe(RESPAWN_TURNS - 1);
 
-    resolveTurn(state, emptyPlan('p1', 2), emptyPlan('p2', 2), rngFor('p1'));
+    advanceUntilRespawn(state, 2);
 
     expect(victim.alive).toBe(true);
     expect(victim.currentHp).toBe(victim.maxHp);
@@ -252,7 +270,7 @@ describe('skills and status effects', () => {
     expect(v1.alive).toBe(false);
     expect(v2.alive).toBe(false);
 
-    resolveTurn(state, emptyPlan('p1', 2), emptyPlan('p2', 2), rngFor('p1'));
+    advanceUntilRespawn(state, 2);
 
     expect(v1.alive).toBe(true);
     expect(v2.alive).toBe(true);
