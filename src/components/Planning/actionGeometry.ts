@@ -2,6 +2,7 @@ import type { BaseAction, BoardConfig, Direction, Position, SkillMove, SkillUse,
 import { getUnitType } from '../../data/unitTypes';
 import { ORTHOGONAL_DIRECTIONS, DIAGONAL_DIRECTIONS, reachableSteps, samePosition, step, isWalkable } from '../../engine/grid';
 import { attackRangeFor, lineCells, frontBandCells } from '../../engine/targeting';
+import { plannedAttackShape } from '../../engine/unitStats';
 import {
   isSkillOnlyMove,
   moveSegmentCapacities,
@@ -274,13 +275,16 @@ export function computeAttackOptions(
   if (!origin) return [];
   const typeDef = getUnitType(unit.typeId);
   if (!typeDef.canAttack) return [];
-  const dirs = directionsForAxis(typeDef.attackShape.axis);
+  // 동전으로 사거리가 갈리는 기물(support3)은 앞면 기준 상한으로 하이라이트한다 — 이동력과 같은
+  // 규칙이다. 뒷면 기준으로 그리면 앞면인 턴에 닿는 칸을 화면이 숨기게 된다.
+  const shape = plannedAttackShape(unit);
+  const dirs = directionsForAxis(shape.axis);
   const options: AttackOption[] = [];
   for (const dir of dirs) {
     const cells =
-      typeDef.attackShape.kind === 'aoe' && typeDef.attackShape.aoeShape === 'line'
+      shape.kind === 'aoe' && shape.aoeShape === 'line'
         ? frontBandCells(origin, dir, board)
-        : lineCells(origin, dir, attackRangeFor(typeDef.attackShape, dir), board);
+        : lineCells(origin, dir, attackRangeFor(shape, dir), board);
     cells.forEach((position) => options.push({ position, direction: dir }));
   }
   return options;

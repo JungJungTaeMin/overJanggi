@@ -1,6 +1,6 @@
 import type { ActionPlan, Direction, GameState, Position, ResolutionEvent, UnitInstance, UnitTurnPlan } from '../types';
 import { getUnitType } from '../../data/unitTypes';
-import { resolvedAttackPower } from '../unitStats';
+import { resolvedAttackPower, resolvedAttackShape } from '../unitStats';
 import { ORTHOGONAL_DIRECTIONS, samePosition, step } from '../grid';
 import { attackRangeFor, frontBandCells, lineCells } from '../targeting';
 import { hasActiveEffect } from '../statusEffects';
@@ -87,7 +87,8 @@ export function resolveAttacks(
     }
 
     const attackPower = resolvedAttackPower(unit, turnNumber);
-    const shape = typeDef.attackShape;
+    // 사거리가 턴마다 갈리는 기물이 있다(support3 동전) — 해결에서는 실제로 굴린 값을 쓴다.
+    const shape = resolvedAttackShape(unit, turnNumber);
 
     if (shape.kind === 'aoe' && shape.aoeShape === 'line' && action.kind === 'attack') {
       // tank3: 전방 1칸 + 좌우 1칸 범위. 범위형 공격은 방벽을 무시하고 관통한다(8장).

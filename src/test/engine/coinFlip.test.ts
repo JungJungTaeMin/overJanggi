@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { resolveTurn } from '../../engine/resolveTurn';
 import { addUnit, emptyPlan, emptyState, plan, rngFor } from './helpers';
+import { getUnitType } from '../../data/unitTypes';
 
 /**
  * support3(확률·포탑형)은 "턴 시작 시 동전 결정: 앞면 이동2·공격6 / 뒷면 이동1·공격4"인데,
@@ -32,6 +33,43 @@ describe('support3 coin flip', () => {
     resolveTurn(state, plan('p1', 1, { [unit.instanceId]: moveTwo }), emptyPlan('p2', 1), rngFor('p2'));
 
     expect(unit.position).toEqual({ x: 1, y: 0 });
+  });
+
+  it('heads extends attack range — the coin decides reach, not just power', () => {
+    // 사거리가 동전에 따라 갈리는 첫 기물이다. 앞면 사거리(3)에만 있는 칸의 적이 실제로 맞아야 한다.
+    const state = emptyState();
+    const attacker = addUnit(state, 'support3', 'p1', { x: 0, y: 0 });
+    const { headsRange, tailsRange } = getUnitType('support3').passive!.payload!;
+    expect(headsRange).toBeGreaterThan(tailsRange);
+    const victim = addUnit(state, 'tank1', 'p2', { x: headsRange, y: 0 });
+    const before = victim.currentHp;
+
+    resolveTurn(
+      state,
+      plan('p1', 1, { [attacker.instanceId]: { baseAction: { kind: 'attack', direction: 'right' } } }),
+      emptyPlan('p2', 1),
+      rngFor('p1'), // 앞면
+    );
+
+    expect(victim.currentHp).toBeLessThan(before);
+  });
+
+  it('tails does not reach the far cell — the same plan simply misses', () => {
+    // 뒷면이면 계획이 무효가 되는 게 아니라 그냥 안 닿는다(이동이 잘리는 것과 같은 취급).
+    const state = emptyState();
+    const attacker = addUnit(state, 'support3', 'p1', { x: 0, y: 0 });
+    const { headsRange } = getUnitType('support3').passive!.payload!;
+    const victim = addUnit(state, 'tank1', 'p2', { x: headsRange, y: 0 });
+    const before = victim.currentHp;
+
+    resolveTurn(
+      state,
+      plan('p1', 1, { [attacker.instanceId]: { baseAction: { kind: 'attack', direction: 'right' } } }),
+      emptyPlan('p2', 1),
+      rngFor('p2'), // 뒷면
+    );
+
+    expect(victim.currentHp).toBe(before);
   });
 
   it('uses the injected rng, so the same seed replays identically', () => {

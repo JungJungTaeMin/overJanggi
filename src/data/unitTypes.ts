@@ -386,11 +386,33 @@ export const unitTypes: UnitTypeDef[] = [
         payload: {},
       },
     ],
-    // 턴 시작 시 동전 결정(각 50%): 앞면 이동2·공격6 / 뒷면 이동1·공격4. 직접 회복 불가.
+    /**
+     * 턴 시작 시 동전 결정(각 50%). 직접 회복은 못 하고 포탑으로만 팀에 기여한다.
+     *
+     * **앞면을 이동2·사거리2 → 이동3·사거리3으로 올렸다**(사용자 결정). 이 기물은 측정 내내
+     * 최하위(44.5%)였고, 원인을 찾는 실험 셋(동전 타이밍·포탑 체력·부활 턴수)이 전부 실패해
+     * 남은 축이 이동뿐이었다(PROGRESS 20절). 선례도 있다 — 충전 사격형은 사거리를 5·6으로 올려도
+     * ±0.0~+2.6%p였는데 이동만 2로 올리자 +8.1%p였다.
+     *
+     * 공격력(4/6)은 그대로 둔다. 이 기물의 진단은 "붙어야 일하는데 붙을 발이 없다"였지 화력이
+     * 아니었고, 화력은 이 저장소에서 반복적으로 스스로를 갉아먹는 손잡이로 확인됐다.
+     *
+     * 사거리가 동전에 따라 갈리는 건 이 기물이 처음이라 `unitStats.ts`에 `resolvedAttackShape`/
+     * `plannedAttackShape`를 새로 뒀다 — 이동력·공격력이 이미 쓰던 것과 같은 패턴이다.
+     * 아래 `attackShape.range`(2)는 동전 정보가 없는 곳에서 쓰이는 바닥값이자 뒷면 값이다.
+     */
     passive: {
       id: 'support3_coinflip',
-      description: '턴 시작 시 동전 결정: 앞면 이동2·공격6 / 뒷면 이동1·공격4',
-      payload: { headsMove: 2, headsAttack: 6, tailsMove: 1, tailsAttack: 4, headsChance: 0.5 },
+      description: '턴 시작 시 동전 결정: 앞면 이동3·공격6·사거리3 / 뒷면 이동1·공격4·사거리2',
+      payload: {
+        headsMove: 3,
+        headsAttack: 6,
+        headsRange: 3,
+        tailsMove: 1,
+        tailsAttack: 4,
+        tailsRange: 2,
+        headsChance: 0.5,
+      },
     },
   },
 ];

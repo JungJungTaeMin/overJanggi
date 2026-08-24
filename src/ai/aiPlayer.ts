@@ -30,7 +30,7 @@ import { hasActiveEffect, sumMagnitude } from '../engine/statusEffects';
 import { isActionLegal, sanitizePlan } from '../engine/validation';
 import { staticRunLimit } from '../engine/movePath';
 // 동전은 해결 단계에서 굴러가므로 계획 시점에는 결과를 알 수 없다 — AI도 앞면 기준(최대치)으로 본다.
-import { plannedAttackPower, plannedMoveSpeed } from '../engine/unitStats';
+import { plannedAttackPower, plannedMoveSpeed, plannedAttackShape } from '../engine/unitStats';
 import type { RngFn } from '../engine/rng';
 import { CAPTURE_MARGIN, ROSTER_SIZE } from '../data/constants';
 import { DIFFICULTY_PROFILES, type AiDifficulty, type DifficultyProfile } from './difficulty';
@@ -125,7 +125,8 @@ function attackValue(
 ): number {
   const typeDef = getUnitType(unit.typeId);
   const power = plannedAttackPower(unit);
-  const shape = typeDef.attackShape;
+  // 계획 단계라 사람 UI와 같은 앞면 기준 상한을 쓴다(support3 동전 사거리).
+  const shape = plannedAttackShape(unit);
 
   if (shape.kind === 'aoe' && shape.aoeShape === 'line') {
     let total = 0;
@@ -224,7 +225,9 @@ export function threatAt(state: GameState, unit: UnitInstance, dest: Position): 
     const canClose = !hasActiveEffect(enemy, 'root', state.turnNumber) && enemy.typeId !== 'dealer3';
     const allowance = canClose ? plannedMoveSpeed(enemy) : 0;
 
-    if (stepsToLineUp(enemy.position!, dest, typeDef.attackShape, typeDef.diagonalMove) <= allowance) {
+    // 사거리도 **적의** 것이다 — 이동력과 같은 이유로, 여기에 `unit`을 넣으면 위협을 받는 쪽의
+    // 사거리로 적의 사정권을 재게 된다.
+    if (stepsToLineUp(enemy.position!, dest, plannedAttackShape(enemy), typeDef.diagonalMove) <= allowance) {
       threat += plannedAttackPower(enemy);
     }
   }
@@ -585,7 +588,7 @@ function generateCandidates(state: GameState, unit: UnitInstance, profile: Diffi
     const willFight = (a: UnitInstance) => {
       const def = getUnitType(a.typeId);
       if (!def.canAttack || (a.cooldowns['basicAttack'] ?? 0) > 0) return false;
-      const reach = def.attackShape.range + plannedMoveSpeed(a);
+      const reach = plannedAttackShape(a).range + plannedMoveSpeed(a);
       return enemies.some((e) => chebyshev(a.position!, e.position!) <= reach);
     };
     const buffFrom = (from: Position) => {

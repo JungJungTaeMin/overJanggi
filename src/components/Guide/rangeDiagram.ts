@@ -30,6 +30,7 @@ function maxReach(typeDef: UnitTypeDef): number {
     typeDef.moveSpeed,
     coinMoveSpeed(typeDef) ?? 0,
     typeDef.attackShape.range,
+    coinAttackRange(typeDef) ?? 0,
     typeDef.attackShape.diagonalRange ?? 0,
     ...skillRanges,
   );
@@ -80,6 +81,13 @@ function coinMoveSpeed(typeDef: UnitTypeDef): number | null {
   if (typeDef.passive?.id !== 'support3_coinflip') return null;
   const heads = typeDef.passive.payload?.headsMove;
   return typeof heads === 'number' && heads > typeDef.moveSpeed ? heads : null;
+}
+
+/** 동전 앞면일 때의 공격 사거리. 동전이 없거나 사거리가 안 갈리면 null. */
+function coinAttackRange(typeDef: UnitTypeDef): number | null {
+  if (typeDef.passive?.id !== 'support3_coinflip') return null;
+  const heads = typeDef.passive.payload?.headsRange;
+  return typeof heads === 'number' && heads > typeDef.attackShape.range ? heads : null;
 }
 
 const cellKey = (p: Position) => `${p.x},${p.y}`;
@@ -139,7 +147,11 @@ export function attackRangeLabel(typeDef: UnitTypeDef): string {
   if (shape.axis === 'both' && shape.diagonalRange !== undefined && shape.diagonalRange !== shape.range) {
     return `직선 ${shape.range}칸 · 대각선 ${shape.diagonalRange}칸`;
   }
-  return `${AXIS_LABEL[shape.axis ?? 'orthogonal']} ${shape.range}칸`;
+  const axis = AXIS_LABEL[shape.axis ?? 'orthogonal'];
+  // 사거리도 동전으로 갈릴 수 있다(support3) — 이동력 라벨과 같은 형식으로 드러낸다.
+  const heads = coinAttackRange(typeDef);
+  if (heads !== null && heads !== shape.range) return `${axis} ${shape.range} 또는 ${heads}칸(동전)`;
+  return `${axis} ${shape.range}칸`;
 }
 
 export function moveRangeLabel(typeDef: UnitTypeDef): string {

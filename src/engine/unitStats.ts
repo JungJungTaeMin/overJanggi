@@ -1,4 +1,4 @@
-import type { UnitInstance } from './types';
+import type { AttackShape, UnitInstance } from './types';
 import { getUnitType } from '../data/unitTypes';
 import { hasActiveEffect, sumMagnitude } from './statusEffects';
 
@@ -65,4 +65,37 @@ export function plannedAttackPower(unit: UnitInstance, turnNumber?: number): num
       ? typeDef.attack
       : Math.max(payload.headsAttack ?? 0, payload.tailsAttack ?? 0);
   return base + (turnNumber === undefined ? 0 : attackBuff(unit, turnNumber));
+}
+
+/**
+ * 이번 턴 실제 공격 도형 — support3만 동전에 따라 **사거리**가 갈린다(앞면 3 / 뒷면 2).
+ *
+ * 사거리를 읽는 곳은 전부 `attackRangeFor()`를 거치게 돼 있는데, 그 함수는 방향(직선/대각)만 보고
+ * `shape`를 그대로 받는다 — 동전 상태를 알 방법이 없다. 그래서 **shape를 건네기 전에 여기서
+ * 갈아 끼운다**. 이렇게 두면 "방향별 사거리는 attackRangeFor 한 곳"이라는 기존 불변식과
+ * "턴별 스탯은 unitStats 한 곳"이라는 불변식이 둘 다 유지된다.
+ */
+function coinRange(unit: UnitInstance, pick: (heads: number, tails: number) => number): AttackShape {
+  const typeDef = getUnitType(unit.typeId);
+  const payload = typeDef.passive?.payload;
+  if (unit.typeId !== 'support3' || !payload) return typeDef.attackShape;
+  const heads = payload.headsRange ?? typeDef.attackShape.range;
+  const tails = payload.tailsRange ?? typeDef.attackShape.range;
+  return { ...typeDef.attackShape, range: pick(heads, tails) };
+}
+
+/** 해결 단계에서 쓰는 실제 공격 도형 — 이번 턴에 굴린 동전 결과를 반영한다. */
+export function resolvedAttackShape(unit: UnitInstance, turnNumber: number): AttackShape {
+  const heads = hasActiveEffect(unit, 'coinHeads', turnNumber);
+  return coinRange(unit, (h, t) => (heads ? h : t));
+}
+
+/**
+ * 계획·UI·AI가 쓰는 공격 도형(앞면 기준 = 최대 사거리).
+ *
+ * 이동력과 같은 이유로 최대치를 잡는다 — 뒷면 기준으로 잡으면 앞면인 턴에 사거리를 못 쓰고,
+ * 굴린 뒤 검증하면 운이 나쁜 턴에 계획 자체가 무효가 된다. 뒷면이 나오면 그냥 안 닿는다.
+ */
+export function plannedAttackShape(unit: UnitInstance): AttackShape {
+  return coinRange(unit, (h, t) => Math.max(h, t));
 }

@@ -78,11 +78,15 @@ describe('기물 그림 — 엔진이 정한 칸과 같은가', () => {
   it('동전으로 이동력이 갈리는 기물은 "운이 좋아야 닿는 칸"을 따로 칠한다', () => {
     const support3 = getUnitType('support3');
     const { cells, extraMoveSpeed } = unitDiagram(support3);
-    expect(extraMoveSpeed).toBe(2);
-    expect(at(cells, 1, 0, 'move')).toBe(true);
-    expect(at(cells, 2, 0, 'move')).toBe(false);
-    expect(at(cells, 2, 0, 'extraMove')).toBe(true);
-    expect(moveRangeLabel(support3)).toBe('직선 1 또는 2칸(동전)');
+    // 앞면/뒷면 값은 밸런스 조정 대상이라 숫자를 박지 않는다 — 여기서 재는 건 특정 칸수가 아니라
+    // **뒷면으로 닿는 칸과 앞면이라야 닿는 칸이 다르게 칠해지는가**다.
+    const { tailsMove, headsMove } = support3.passive!.payload!;
+    expect(extraMoveSpeed).toBe(headsMove);
+    expect(headsMove).toBeGreaterThan(tailsMove);
+    expect(at(cells, tailsMove, 0, 'move')).toBe(true);
+    expect(at(cells, headsMove, 0, 'move')).toBe(false);
+    expect(at(cells, headsMove, 0, 'extraMove')).toBe(true);
+    expect(moveRangeLabel(support3)).toBe(`직선 ${tailsMove} 또는 ${headsMove}칸(동전)`);
   });
 });
 
