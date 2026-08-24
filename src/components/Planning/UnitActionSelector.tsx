@@ -18,8 +18,9 @@ import {
   wholeExtraMoveUses,
 } from '../../engine/movePath';
 import { isWalkable, samePosition, step } from '../../engine/grid';
-import { sumMagnitude } from '../../engine/statusEffects';
+import { hasActiveEffect, sumMagnitude } from '../../engine/statusEffects';
 import { SkillTargetPicker, ALL_DIRECTIONS, DIRECTION_LABEL } from './SkillTargetPicker';
+import { skillReachLabel } from '../statLabels';
 
 const ORTHOGONAL: Direction[] = ['up', 'down', 'left', 'right'];
 const DIAGONAL: Direction[] = ['upleft', 'upright', 'downleft', 'downright'];
@@ -69,6 +70,14 @@ export function UnitActionSelector({ unit, allUnits, board, turnNumber, plan, on
   const selectedSkill = skillUse ? typeDef.skills.find((s) => s.id === skillUse.skillId) : undefined;
 
   const moveDirections = typeDef.diagonalMove ? ALL_DIRECTIONS : ORTHOGONAL;
+  /**
+   * 이번 턴 **해결 시점의** 공격 모드 상태. validation.ts와 같은 계산이다 — 토글은 preAttack에서
+   * 즉시 반영되므로 "지금 켜져 있는가"가 아니라 "이번 턴에 켜져 있을 것인가"가 이동 가능 여부를
+   * 정한다. 화면이 현재 상태만 보고 말하면 토글을 계획한 턴에 정반대로 안내하게 된다.
+   */
+  const attackModeWillBeOn =
+    hasActiveEffect(unit, 'attackMode', turnNumber) !== (plan.skillUse?.skillId === 'dealer3_attack_mode');
+
   const attackDirections = directionsForAxis(typeDef.attackShape.axis);
 
   // dealer2 시간 역행 관련 상태
@@ -216,6 +225,19 @@ export function UnitActionSelector({ unit, allUnits, board, turnNumber, plan, on
           {typeDef.canAttack && <option value="attack">공격</option>}
         </select>
 
+        {/* 공격 항목이 그냥 없으면 "왜 안 보이지"가 된다. 못 하는 게 아니라 **원래 못 하는 기물**이라는
+            걸 말해 줘야 한다 — 이 기물의 정체성(공격을 포기한 순수 유틸)이기도 하다. */}
+        {!typeDef.canAttack && <span className="editor-hint">이 기물은 공격을 못 합니다 — 기술로만 싸웁니다.</span>}
+
+        {/* 공격 모드는 켜면 이동이 막힌다(validation.ts). 배지가 "켜짐"만 알려 주면 왜 이동 칸이
+            사라졌는지 알 수 없어서, 대가를 이 자리에서 같이 말한다. 켜고 끄는 건 같은 턴에 즉시
+            반영되므로 이번 턴 계획까지 포함해 판정한다. */}
+        {typeDef.id === 'dealer3' && (
+          <span className="editor-hint">
+            {attackModeWillBeOn ? '공격 모드 켜짐 — 이번 턴 이동 불가, 공격만 가능합니다.' : '공격 모드 꺼짐 — 이번 턴 이동만 가능, 공격 불가입니다.'}
+          </span>
+        )}
+
         {baseAction.kind === 'attack' && (
           <>
             <select value={baseAction.direction} onChange={(e) => onBaseAction({ ...baseAction, direction: e.target.value as Direction })}>
@@ -353,6 +375,9 @@ export function UnitActionSelector({ unit, allUnits, board, turnNumber, plan, on
             {typeDef.skills.map((s) => (
               <option key={s.id} value={s.id} disabled={skillDisabled(s.id)}>
                 {s.name}
+                {/* 사거리는 고르기 **전에** 보여야 한다 — 고르고 나서 대상 목록이 비어 있는 걸 보고
+                    "안 닿는구나"를 알게 되면 그 클릭이 통째로 낭비다. 도움말과 같은 함수를 쓴다. */}
+                {skillReachLabel(s) ? ` · ${skillReachLabel(s)}` : ''}
                 {s.gate.type === 'cooldown' && (unit.cooldowns[s.id] ?? 0) > 0 ? ` (쿨타임 ${unit.cooldowns[s.id]})` : ''}
                 {s.gate.type === 'charge' ? ` (충전 ${unit.charges[s.id] ?? 0}/${s.gate.maxCharges})` : ''}
               </option>

@@ -38,6 +38,12 @@ interface Props {
   /** 선택된 유닛이 공격 가능한 칸(주황 강조) — 클릭하면 해당 방향으로 공격을 지정한다. */
   attackCells?: Position[];
   /**
+   * 계획한 회복 기술이 닿는 칸. 이동·공격 칸과 달리 **클릭 대상이 아니라 알림**이다 —
+   * 자기중심 반경(범위 회복형)은 대상을 고르는 게 아니라 서는 자리로 정해지기 때문이다.
+   * 그래서 칸을 칠하지 않고 테두리만 그려 클릭 가능한 칸과 헷갈리지 않게 한다.
+   */
+  healCells?: Position[];
+  /**
    * 이동 칸과 공격 칸이 **겹치는 칸**을 클릭했을 때 무엇으로 해석하는지.
    * 색·툴팁이 이 우선순위를 그대로 따라야 "클릭하면 무슨 일이 일어나는가"가 보드만 보고 읽힌다.
    */
@@ -75,6 +81,7 @@ export function Board({
   highlightCells = [],
   moveCells = [],
   attackCells = [],
+  healCells = [],
   clickPriority = 'move',
   clickableCells = [],
   selectedUnitId,
@@ -300,6 +307,18 @@ export function Board({
             );
           });
       })}
+      {healCells.map((p) => (
+        <rect
+          key={`heal-${p.x},${p.y}`}
+          className="heal-range-cell"
+          x={p.x * CELL_SIZE + 1.5}
+          y={p.y * CELL_SIZE + 1.5}
+          width={CELL_SIZE - 3}
+          height={CELL_SIZE - 3}
+          fill="none"
+          pointerEvents="none"
+        />
+      ))}
       {units.map((u) => (
         <UnitToken
           key={u.instanceId}

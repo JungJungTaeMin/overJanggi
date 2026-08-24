@@ -337,6 +337,14 @@ select, input {
 .badge-ammo { background: #475569; }
 .badge-ammo.resting { background: #b45309; }
 
+/* 회복 사정권 — 도움말 그림의 회복 색(--mark-heal)과 같은 값을 써야 "도움말에서 본 그 표시"가
+   대전 화면에서도 같은 뜻으로 읽힌다. 칠이 아니라 테두리인 건 클릭 대상이 아니기 때문이다. */
+.heal-range-cell {
+  stroke: var(--mark-heal);
+  stroke-width: 2;
+  stroke-dasharray: 3 2;
+}
+
 .unit-action-chip {
   margin-left: auto;
   font-size: 12px;

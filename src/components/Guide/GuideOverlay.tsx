@@ -6,16 +6,8 @@ import { mapDefinition } from '../../data/mapDefinitions';
 import { captureWinner } from '../../engine/capture';
 import { useGameStore } from '../../store/gameStore';
 import { MiniBoard, type MiniMark, type MiniToken } from './MiniBoard';
-import {
-  DIAGRAM_BOARD,
-  DIAGRAM_ORIGIN,
-  attackPowerLabel,
-  attackRangeLabel,
-  moveRangeLabel,
-  skillGateLabel,
-  skillReachLabel,
-  unitDiagram,
-} from './rangeDiagram';
+import { DIAGRAM_BOARD, DIAGRAM_ORIGIN, unitDiagram } from './rangeDiagram';
+import { attackPowerLabel, attackRangeLabel, moveRangeLabel, skillGateLabel, skillReachLabel } from '../statLabels';
 
 const ROLE_LABEL: Record<string, string> = { tank: '탱커', dealer: '딜러', support: '지원' };
 

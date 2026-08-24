@@ -19,6 +19,7 @@ import {
   attackOrigin,
   computeAttackOptions,
   computeFixedMoveOptions,
+  computeHealCells,
   computeMoveOptions,
   isDashPlanning,
   findAttackOption,
@@ -176,6 +177,17 @@ function GameScreen({ shortcutsOff }: { shortcutsOff: boolean }) {
     }
     return result;
   }, [state, plans, canPlan]);
+
+  /**
+   * 계획한 회복 기술이 닿는 칸. 회복은 이동(1단계) 뒤인 4단계라 **이동 도착 칸 기준**으로 그려야
+   * 실제와 맞는다 — 범위 회복형은 서 있는 자리가 곧 성능이므로 "여기로 가면 누구까지 닿는가"가
+   * 이동을 정하는 근거가 된다.
+   */
+  const healCells = useMemo<Position[]>(() => {
+    if (!state || !canPlan || !selectedUnit || !selectedUnit.alive) return [];
+    const arrival = previewMoves.find((p) => p.unit.instanceId === selectedUnit.instanceId)?.to;
+    return computeHealCells(selectedUnit, state.board, selectedPlan, arrival);
+  }, [state, canPlan, selectedUnit, selectedPlan, previewMoves]);
 
   // dealer2 시간 역행 기준점: 이미 기록된 스냅샷을 보드에 표시한다.
   const rewindAnchors = useMemo<RewindAnchor[]>(() => {
@@ -358,6 +370,7 @@ function GameScreen({ shortcutsOff }: { shortcutsOff: boolean }) {
             healPackTimers={state.healPackTimers}
             moveCells={canPlanClicks ? moveOptions.map((o) => o.position) : []}
             attackCells={canPlanClicks ? attackOptions.map((o) => o.position) : []}
+            healCells={healCells}
             clickPriority={clickMode}
             selectedUnitId={selectedUnitId}
             onCellClick={handleCellClick}

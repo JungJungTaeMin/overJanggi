@@ -1,8 +1,9 @@
 import type { BaseAction, BoardConfig, Direction, Position, SkillMove, SkillUse, UnitInstance, UnitTurnPlan } from '../../engine/types';
 import { getUnitType } from '../../data/unitTypes';
 import { ORTHOGONAL_DIRECTIONS, DIAGONAL_DIRECTIONS, reachableSteps, samePosition, step, isWalkable } from '../../engine/grid';
-import { attackRangeFor, lineCells, frontBandCells } from '../../engine/targeting';
+import { attackRangeFor, lineCells, frontBandCells, isWithinSkillRange, type SkillAxis } from '../../engine/targeting';
 import { plannedAttackShape } from '../../engine/unitStats';
+import { skillRangeSpec } from '../../engine/skillRange';
 import {
   isSkillOnlyMove,
   moveSegmentCapacities,
@@ -378,4 +379,41 @@ export function previewMoveDestination(steps: PreviewStep[], unit: UnitInstance)
   const last = steps[steps.length - 1];
   if (!last || !unit.position) return null;
   return samePosition(last.to, unit.position) ? null : last.to;
+}
+
+/**
+ * 이번 턴 계획한 회복 기술이 **닿는 칸**. 회복은 대상을 고르는 방식이 기술마다 달라서
+ * (자기중심 반경 / 직선 사거리) 화면에 아무것도 안 뜨면 어디까지 닿는지 알 방법이 없다 —
+ * 특히 범위 회복형은 **서 있는 자리가 곧 성능**인데 그 반경이 보이지 않았다.
+ *
+ * 사거리 판정은 `isWithinSkillRange`(해결·검증이 쓰는 그 함수)에 그대로 위임한다.
+ * 계획한 이동이 있으면 **도착 칸 기준**으로 그린다 — 회복은 이동(1단계) 뒤인 4단계에 일어나므로
+ * 출발 칸으로 그리면 실제와 다른 자리를 보여 주게 된다.
+ */
+export function computeHealCells(
+  unit: UnitInstance,
+  board: BoardConfig,
+  plan: UnitTurnPlan | undefined,
+  from?: Position,
+): Position[] {
+  const skillId = plan?.skillUse?.skillId;
+  if (!skillId) return [];
+  const skill = getUnitType(unit.typeId).skills.find((s) => s.id === skillId);
+  if (!skill || skill.effectCategory !== 'heal') return [];
+  const origin = from ?? unit.position;
+  if (!origin) return [];
+
+  const spec = skillRangeSpec(skill);
+  const range = spec?.range ?? skill.payload.radius;
+  const axis: SkillAxis = spec?.axis ?? 'radius';
+  if (typeof range !== 'number' || range <= 0) return [];
+
+  const cells: Position[] = [];
+  for (let y = 0; y < board.height; y++) {
+    for (let x = 0; x < board.width; x++) {
+      const cell = { x, y };
+      if (isWithinSkillRange(origin, cell, range, board, axis)) cells.push(cell);
+    }
+  }
+  return cells;
 }

@@ -2,14 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { unitTypes, getUnitType } from '../../data/unitTypes';
 import { CAPTURE_MARGIN } from '../../data/constants';
 import { captureWinner } from '../../engine/capture';
-import {
-  DIAGRAM_ORIGIN,
-  DIAGRAM_RADIUS,
-  attackRangeLabel,
-  moveRangeLabel,
-  unitDiagram,
-  attackPowerLabel,
-} from '../../components/Guide/rangeDiagram';
+import { DIAGRAM_ORIGIN, DIAGRAM_RADIUS, unitDiagram } from '../../components/Guide/rangeDiagram';
+import { attackPowerLabel, attackRangeLabel, moveRangeLabel } from '../../components/statLabels';
 
 /**
  * 도움말 그림이 틀리면 차라리 없느니만 못하다 — 처음 온 사람은 그림을 규칙으로 믿고 배우기 때문에,
