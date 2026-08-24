@@ -689,11 +689,37 @@ select, input {
 
 /* ---------- 모드 선택 메뉴 / 배너 ---------- */
 
+/**
+ * 시작 화면은 좁은 화면 기준으로 한 줄짜리 세로 목록이고, 넓어지면 두 갈래(설정 | 모드)로 벌어진다.
+ * 세로로만 쌓아 두면 1400px 셸 안에서 오른쪽 640px이 통째로 비면서 페이지가 1190px까지 길어져
+ * 온라인 대전은 스크롤해야 보였다 — 폭이 남는데 높이를 쓰고 있던 셈이다.
+ */
 .mode-menu {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  max-width: 760px;
+}
+
+.menu-column {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-width: 760px;
+  min-width: 0;
+}
+
+/* 두 갈래가 나란히 설 만큼 넓을 때만 벌린다. 이보다 좁으면 카드가 눌려 오히려 읽기 나빠진다. */
+@media (min-width: 1120px) {
+  .mode-menu {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    max-width: 1180px;
+  }
+
+  /* 처음 온 사람이 눌러야 할 단 하나의 버튼이라, 갈래를 나눠도 이것만은 전체 폭을 쓴다. */
+  .quick-start-card {
+    grid-column: 1 / -1;
+  }
 }
 
 .mode-card {

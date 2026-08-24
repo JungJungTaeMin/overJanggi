@@ -53,12 +53,17 @@ export function ModeMenu({ onOpenGuide }: { onOpenGuide: () => void }) {
         </div>
       </section>
 
-      {/* 맵을 모드 버튼보다 위에 둔다 — 모드 버튼을 누르면 곧바로 판이 시작되므로, 아래에 있으면
-          맵을 고르기 전에 시작돼 버린다. */}
-      <MapPicker />
-      {/* 규칙도 같은 이유로 위에 있어야 한다. */}
-      <RosterRulePicker />
+      {/* 설정(맵·규칙)과 모드를 두 갈래로 묶는다. 넓은 화면에서는 나란히 놓여 **한 화면에 다 들어오고**,
+          좁은 화면에서는 이 순서 그대로 세로로 쌓인다.
 
+          묶음의 순서가 규칙이다 — 모드 버튼은 누르는 즉시 판이 시작되므로, 맵과 편성 규칙이 항상
+          그보다 먼저(위 또는 왼쪽) 눈에 들어와야 고르기 전에 시작돼 버리는 일이 없다. */}
+      <div className="menu-column menu-column-setup">
+        <MapPicker />
+        <RosterRulePicker />
+      </div>
+
+      <div className="menu-column menu-column-modes">
       <section className="mode-card">
         <h2>로컬 대전</h2>
         <p>한 화면에서 두 사람이 번갈아 계획을 세웁니다. 양쪽 계획이 모두 보이는 디버그 모드입니다.</p>
@@ -124,6 +129,7 @@ export function ModeMenu({ onOpenGuide }: { onOpenGuide: () => void }) {
         {connecting && <p className="muted">연결 중…</p>}
         {online.status === 'error' && online.error && <p className="online-error">{online.error}</p>}
       </section>
+      </div>
     </div>
   );
 }
