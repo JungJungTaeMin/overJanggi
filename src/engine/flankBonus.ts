@@ -13,14 +13,14 @@ import { ORTHOGONAL_DIRECTIONS, samePosition, step } from './grid';
  * 실효 공격력이 8.18이다(전체 피해의 36.3%가 이 패시브에서 나온다). 화면이 5만 보여주면
  * 스탯 시트가 실제를 반영하지 못한다.
  */
-export function hasAdjacentAlly(target: UnitInstance, units: UnitInstance[]): boolean {
-  if (!target.position) return false;
-  return ORTHOGONAL_DIRECTIONS.some((dir) => {
+export function countAdjacentAllies(target: UnitInstance, units: UnitInstance[]): number {
+  if (!target.position) return 0;
+  return ORTHOGONAL_DIRECTIONS.filter((dir) => {
     const adj = step(target.position!, dir);
     return units.some(
       (u) => u.alive && u.instanceId !== target.instanceId && u.owner === target.owner && u.position && samePosition(u.position, adj),
     );
-  });
+  }).length;
 }
 
 /**
@@ -33,5 +33,8 @@ export function flankBonusFor(attacker: UnitInstance, target: UnitInstance, unit
   const passive = getUnitType(attacker.typeId).passive;
   if (passive?.id !== 'dealer4_flank_bonus') return 0;
   if (target.owner === attacker.owner) return 0;
-  return hasAdjacentAlly(target, units) ? (passive.payload?.bonusDamage ?? 0) : 0;
+  // 몇 명이 붙어 있어야 "뭉친 것"으로 볼지는 데이터가 정한다 — 조건을 조이는 실험을 코드 수정
+  // 없이 돌릴 수 있어야 하고, 화면·해결·AI가 같은 문턱을 본다.
+  const needed = passive.payload?.minAdjacentAllies ?? 1;
+  return countAdjacentAllies(target, units) >= needed ? (passive.payload?.bonusDamage ?? 0) : 0;
 }

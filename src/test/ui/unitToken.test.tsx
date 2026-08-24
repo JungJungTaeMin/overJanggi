@@ -25,9 +25,18 @@ describe('측면 보너스 표시 — 조준 시점에 보이는가', () => {
     // 공격자는 대각선으로 쏘므로(대각 3칸) 대각선 위에 대상을 둔다.
     const attacker = createUnitInstance('dealer4', 'p1', { x: 0, y: 0 });
     const lone = createUnitInstance('tank1', 'p2', { x: 1, y: 1 }); // 옆에 아무도 없다
-    const paired = createUnitInstance('tank1', 'p2', { x: 2, y: 2 }); // 바로 옆에 아군이 있다
-    const buddy = createUnitInstance('tank1', 'p2', { x: 3, y: 2 });
-    return { units: [attacker, lone, paired, buddy], attacker, lone, paired };
+    const paired = createUnitInstance('tank1', 'p2', { x: 2, y: 2 });
+    // 발동에 필요한 인접 아군 수는 밸런스 조정 대상이라 데이터에서 읽는다 — 숫자를 박아 두면
+    // 문턱을 올릴 때마다 규칙이 아니라 테스트가 깨진다.
+    const needed = getUnitType('dealer4').passive!.payload!.minAdjacentAllies ?? 1;
+    const around = [
+      { x: 3, y: 2 },
+      { x: 1, y: 2 },
+      { x: 2, y: 3 },
+      { x: 2, y: 1 },
+    ].slice(0, needed);
+    const buddies = around.map((p) => createUnitInstance('tank1', 'p2', p));
+    return { units: [attacker, lone, paired, ...buddies], attacker, lone, paired };
   }
 
   it('옆에 아군이 붙은 적에게만 보너스를 띄우고, 수치는 기물 데이터에서 온다', () => {

@@ -3,6 +3,8 @@ import type { Direction, Position } from '../../engine/types';
 import { resolveTurn } from '../../engine/resolveTurn';
 import { addUnit, emptyPlan, emptyState, plan, rngFor } from './helpers';
 import { ammoState } from '../../engine/unitStats';
+import { flankBonusFor } from '../../engine/flankBonus';
+import { getUnitType } from '../../data/unitTypes';
 
 describe('attack resolution', () => {
   it('a line attack only hits the first enemy along the ray', () => {
@@ -243,5 +245,54 @@ describe('ammoState — 탄창식 기본 공격의 화면 표시용 단일 근�
     // 공격 단계에서 2로 걸렸다가 같은 턴 종료에 1로 깎인 상태다 — 다음 턴 공격이 불법이므로
     // 사람이 체감하는 대기도 정확히 1턴이다.
     expect(ammoState(d1)).toEqual({ magazine: 2, remaining: 0, restingTurns: 1 });
+  });
+});
+
+/**
+ * 측면 보너스의 **조건**은 밸런스 손잡이다(문턱을 올리면 "뭉친 적"의 정의가 좁아진다).
+ * 조건과 수치가 화면·해결·AI 세 곳에서 같아야 하므로 flankBonusFor 한 곳만 쓰게 돼 있고,
+ * 그 함수가 데이터의 문턱을 실제로 따르는지를 여기서 잠근다.
+ */
+describe('flankBonusFor — 측면 보너스 조건', () => {
+  const bonus = getUnitType('dealer4').passive!.payload!.bonusDamage!;
+  const needed = getUnitType('dealer4').passive!.payload!.minAdjacentAllies ?? 1;
+
+  function withAdjacentAllies(count: number) {
+    const state = emptyState();
+    const attacker = addUnit(state, 'dealer4', 'p1', { x: 0, y: 0 });
+    const target = addUnit(state, 'tank1', 'p2', { x: 3, y: 3 });
+    const spots = [
+      { x: 4, y: 3 },
+      { x: 2, y: 3 },
+      { x: 3, y: 4 },
+      { x: 3, y: 2 },
+    ].slice(0, count);
+    for (const p of spots) addUnit(state, 'tank1', 'p2', p);
+    return { state, attacker, target };
+  }
+
+  it('문턱만큼 아군이 붙어야 보너스가 붙는다', () => {
+    const { state, attacker, target } = withAdjacentAllies(needed);
+    expect(flankBonusFor(attacker, target, state.units)).toBe(bonus);
+  });
+
+  it('한 명 모자라면 안 붙는다 — 조건이 실제로 문턱을 본다', () => {
+    const { state, attacker, target } = withAdjacentAllies(needed - 1);
+    expect(flankBonusFor(attacker, target, state.units)).toBe(0);
+  });
+
+  it('아군에게는 절대 안 붙는다', () => {
+    const state = emptyState();
+    const attacker = addUnit(state, 'dealer4', 'p1', { x: 0, y: 0 });
+    const friend = addUnit(state, 'tank1', 'p1', { x: 3, y: 3 });
+    addUnit(state, 'tank1', 'p1', { x: 4, y: 3 });
+    addUnit(state, 'tank1', 'p1', { x: 2, y: 3 });
+    expect(flankBonusFor(attacker, friend, state.units)).toBe(0);
+  });
+
+  it('패시브가 없는 기물은 조건을 채워도 0이다', () => {
+    const { state, target } = withAdjacentAllies(needed);
+    const other = addUnit(state, 'dealer1', 'p1', { x: 0, y: 5 });
+    expect(flankBonusFor(other, target, state.units)).toBe(0);
   });
 });
