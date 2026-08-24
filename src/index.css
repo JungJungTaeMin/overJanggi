@@ -190,6 +190,25 @@ select, input {
   font-weight: 700;
 }
 
+/**
+ * 보드 오른쪽 기둥 — 계획 패널과 상태 목록이 세로로 쌓인다.
+ *
+ * 예전에는 계획 패널이 보드 **아래**에 있었다. 보드가 534px인데 그 오른쪽은 상태 목록(높이 178px)만
+ * 놓여 500px 넘게 비어 있었고, 패널은 그 빈 곳을 놔두고 아래로 내려가 페이지를 1468px까지 늘렸다 —
+ * 매 턴 판과 패널을 번갈아 보려면 스크롤해야 했다는 뜻이다. 칸을 클릭해 계획하는 게임이라 둘은
+ * 반드시 동시에 보여야 한다.
+ *
+ * `min-width`는 계획 패널 하나의 최소 폭(340px)에 맞춘다 — 이보다 좁아지면 보드 아래로 접히는데,
+ * 그게 좁은 화면에서는 옳은 결과다.
+ */
+.side-column {
+  flex: 1 1 360px;
+  min-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .hud-column {
   display: flex;
   gap: 20px;
@@ -225,7 +244,9 @@ select, input {
 
 .action-panel {
   flex: 1;
-  min-width: 340px;
+  /* `min(…, 100%)`인 이유: 340px 고정이면 폭이 그보다 좁은 화면(패딩 뺀 실폭 335px인 375px 폰)에서
+     칸을 넘겨 가로 스크롤이 생긴다. 넓을 때는 340px 그대로라 보드 옆에서 접히는 지점은 안 바뀐다. */
+  min-width: min(340px, 100%);
   background: var(--panel-bg);
   border: 1px solid var(--border);
   border-radius: 10px;

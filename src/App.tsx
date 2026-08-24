@@ -420,15 +420,21 @@ function GameScreen({ shortcutsOff }: { shortcutsOff: boolean }) {
           <RespawnTracker />
           <ResolutionLog />
         </div>
-        <div className="hud-column">
-          <UnitStatusList owner="p1" label="Player 1" />
-          <UnitStatusList owner="p2" label="Player 2" />
+        {/* 계획 패널을 보드 **옆**에 둔다. 아래에 깔면 매 턴 판과 패널을 번갈아 보느라 스크롤해야
+            했는데, 이 게임은 칸을 클릭해 계획하므로 둘이 동시에 보여야 한다.
+            계획이 상태 목록보다 위인 건 매 턴 만지는 쪽이기 때문이다(상태는 참고용이고, 체력은
+            계획 패널 안에도 이미 나온다). */}
+        <div className="side-column">
+          <div className="action-panels">
+            {planningOwners.map((owner) => (
+              <ActionPanel key={owner} owner={owner} label={`${owner === 'p1' ? 'Player 1' : 'Player 2'} 계획`} />
+            ))}
+          </div>
+          <div className="hud-column">
+            <UnitStatusList owner="p1" label="Player 1" />
+            <UnitStatusList owner="p2" label="Player 2" />
+          </div>
         </div>
-      </div>
-      <div className="action-panels">
-        {planningOwners.map((owner) => (
-          <ActionPanel key={owner} owner={owner} label={`${owner === 'p1' ? 'Player 1' : 'Player 2'} 계획`} />
-        ))}
       </div>
     </div>
   );
