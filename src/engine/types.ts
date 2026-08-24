@@ -53,6 +53,14 @@ export interface SkillDef {
 export interface UnitTypeDef {
   id: string;
   name: string;
+  /**
+   * 판 위 토큰에 찍히는 **한 글자** 이름.
+   *
+   * 이름에서 유도하지 않고 손으로 적는다 — "방어 강화형"과 "방벽·제어형", "장거리 화력형"과
+   * "장거리 회복·구속형"처럼 앞 글자가 겹치는 짝이 있어서 자동 생성하면 서로 구별되지 않는다.
+   * 구별이 목적인 값이므로 10종이 전부 달라야 한다(unitTypes.test.ts가 잠근다).
+   */
+  shortLabel: string;
   role: Role;
   moveSpeed: number;
   /** 체력 Lv. maxHp = hpLv * HP_MULTIPLIER(5). fixedMaxHp가 있으면 그 값을 대신 사용(예: 포탑은 "체력 1"로 Lv 공식과 무관하게 명시됨) */

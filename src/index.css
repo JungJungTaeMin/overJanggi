@@ -332,6 +332,10 @@ select, input {
 .badge-buff { background: #ea580c; }
 /* 시간 역행 관련 표시는 보드의 경로/기준점 색(REWIND_COLOR)과 같은 보라색으로 통일한다. */
 .badge-rewind { background: #7c3aed; }
+/* 탄창은 상태(켜짐/꺼짐)가 아니라 **소모되는 자원**이라 색으로 성격을 갈라 놓는다 —
+   남아 있을 때는 중립(회색), 다 쓰고 쉬는 중일 때만 경고색으로 바뀐다. */
+.badge-ammo { background: #475569; }
+.badge-ammo.resting { background: #b45309; }
 
 .unit-action-chip {
   margin-left: auto;

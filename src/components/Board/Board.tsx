@@ -1,7 +1,9 @@
+import { useMemo } from 'react';
 import type { BoardConfig, Position, UnitInstance } from '../../engine/types';
 import { healPackAt, isInCaptureZone, isObstacle, samePosition } from '../../engine/grid';
 import type { PreviewStep } from '../Planning/actionGeometry';
 import { UnitToken } from './UnitToken';
+import { flankBonusFor } from '../../engine/flankBonus';
 
 export const CELL_SIZE = 42;
 
@@ -87,6 +89,26 @@ export function Board({
   }
   const moveSet = toSet(moveCells);
   const attackSet = toSet(attackCells);
+  /**
+   * 지금 조준 중인 기물의 패시브가 **어느 대상에게** 얹히는지. 측정에서 이 패시브가 dealer4 전체
+   * 피해의 36.3%를 차지하는 것으로 나왔는데(표기 공격력 5, 실효 8.18) 화면에는 아무 단서도 없었다 —
+   * 사거리 안에 둘이 서 있으면 어느 쪽을 쏘는 게 이득인지가 조준 시점에 보여야 한다.
+   *
+   * 조건과 수치는 engine/flankBonus.ts가 단일 근거다(해결 단계가 부르는 바로 그 함수).
+   * 사거리 밖까지 칠하면 소음이라 **지금 때릴 수 있는 칸**에 선 적만 표시한다.
+   */
+  const flankTargets = useMemo(() => {
+    const marks = new Map<string, number>();
+    const attacker = units.find((u) => u.instanceId === selectedUnitId);
+    if (!attacker) return marks;
+    for (const target of units) {
+      if (!target.alive || !target.position) continue;
+      if (!attackSet.has(`${target.position.x},${target.position.y}`)) continue;
+      const bonus = flankBonusFor(attacker, target, units);
+      if (bonus > 0) marks.set(target.instanceId, bonus);
+    }
+    return marks;
+  }, [units, selectedUnitId, attackCells]);
   const clickableSet = new Set([...clickableCells, ...moveCells, ...attackCells].map((c) => `${c.x},${c.y}`));
   const highlightSet = toSet(highlightCells);
 
@@ -284,6 +306,7 @@ export function Board({
           unit={u}
           cellSize={CELL_SIZE}
           selected={u.instanceId === selectedUnitId}
+          bonusDamage={flankTargets.get(u.instanceId)}
           onClick={onUnitClick ? () => onUnitClick(u.instanceId) : undefined}
         />
       ))}

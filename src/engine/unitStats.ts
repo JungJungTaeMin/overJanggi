@@ -99,3 +99,33 @@ export function resolvedAttackShape(unit: UnitInstance, turnNumber: number): Att
 export function plannedAttackShape(unit: UnitInstance): AttackShape {
   return coinRange(unit, (h, t) => Math.max(h, t));
 }
+
+/**
+ * 탄창식 기본 공격의 현재 상태(dealer1: 2발 쏘고 1턴 휴식).
+ *
+ * **UI가 이 계산을 직접 하면 안 된다.** 잔탄이 한 값이 아니라 `charges['basicAttack']`(이번 탄창에서
+ * 쏜 횟수)과 `cooldowns['basicAttack']`(휴식 잔여)에 나뉘어 있고, 둘의 관계가 직관적이지 않다 —
+ * 쿨타임은 공격 단계에서 `attackRestTurns + 1`로 설정되지만 그 +1은 **같은 턴 종료에 곧바로
+ * 깎이는 일시값**이라(attacks.ts 주석), 화면이 보는 해결 후 상태에서는 이미 `attackRestTurns`다.
+ * 여기서 보정을 넣으면 오히려 한 턴을 덜 세게 된다.
+ *
+ * 탄창식이 아닌 기물은 null — 호출부가 "이 기물에는 해당 없음"과 "0발 남음"을 구별해야 한다.
+ */
+export interface AmmoState {
+  /** 탄창 크기(연속으로 쏠 수 있는 발수) */
+  magazine: number;
+  /** 지금 쏠 수 있는 남은 발수. 휴식 중이면 0이다. */
+  remaining: number;
+  /** 0보다 크면 휴식 중이고, 이번 턴 공격이 아예 불법이다(validation.ts). */
+  restingTurns: number;
+}
+
+export function ammoState(unit: UnitInstance): AmmoState | null {
+  const typeDef = getUnitType(unit.typeId);
+  if (!typeDef.attackRestTurns) return null;
+  const magazine = typeDef.attackShots ?? 1;
+  // 해결이 끝난 뒤의 값을 그대로 쓴다 — 공격 단계의 +1은 같은 턴 종료에 이미 깎였다.
+  const restingTurns = unit.cooldowns['basicAttack'] ?? 0;
+  const fired = unit.charges['basicAttack'] ?? 0;
+  return { magazine, remaining: restingTurns > 0 ? 0 : magazine - fired, restingTurns };
+}

@@ -2,6 +2,7 @@ import type { Owner } from '../../engine/types';
 import { useGameStore } from '../../store/gameStore';
 import { getUnitType } from '../../data/unitTypes';
 import { REWIND_SKILL_ID } from '../../data/constants';
+import { ammoState } from '../../engine/unitStats';
 import { hasActiveEffect, sumMagnitude } from '../../engine/statusEffects';
 import { UnitActionSelector } from './UnitActionSelector';
 import { summarizeBaseAction, summarizeSkillMove, summarizeSkillUse } from './planSummary';
@@ -41,6 +42,7 @@ export function ActionPanel({ owner, label }: Props) {
           const skillMoveSummary = summarizeSkillMove(unitPlan.skillMove);
           const rewindGate = typeDef.skills.find((s) => s.id === REWIND_SKILL_ID)?.gate;
           const rewindMax = rewindGate?.type === 'charge' ? rewindGate.maxCharges : 0;
+          const ammo = ammoState(unit);
 
           return (
             <div key={unit.instanceId} className={`unit-row${selected ? ' selected' : ''}${!unit.alive ? ' dead' : ''}`}>
@@ -59,6 +61,13 @@ export function ActionPanel({ owner, label }: Props) {
                     <span className="hp-text">
                       {unit.currentHp}/{unit.maxHp}
                     </span>
+                    {/* 탄창(dealer1)은 이 기물의 유일한 운용 축인데 그동안 화면 어디에도 없었다.
+                        잔탄과 휴식은 서로 다른 상태라 한 배지 안에서도 문구를 갈라 쓴다. */}
+                    {ammo && (
+                      <span className={`badge badge-ammo${ammo.remaining === 0 ? ' resting' : ''}`}>
+                        {ammo.remaining > 0 ? `탄창 ${ammo.remaining}/${ammo.magazine}` : `재장전 ${ammo.restingTurns}턴`}
+                      </span>
+                    )}
                     {unit.shieldHp > 0 && <span className="badge badge-shield">보호막 {unit.shieldHp}</span>}
                     {hasActiveEffect(unit, 'root', state.turnNumber) && <span className="badge badge-root">구속</span>}
                     {/* 행동불가는 구속과 전혀 다른 제약이다(이동뿐 아니라 공격·기술까지 막힌다).

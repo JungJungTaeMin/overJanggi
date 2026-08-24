@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Direction, Position } from '../../engine/types';
 import { resolveTurn } from '../../engine/resolveTurn';
 import { addUnit, emptyPlan, emptyState, plan, rngFor } from './helpers';
+import { ammoState } from '../../engine/unitStats';
 
 describe('attack resolution', () => {
   it('a line attack only hits the first enemy along the ray', () => {
@@ -195,5 +196,52 @@ describe('attack resolution', () => {
 
     expect(p1Unit.alive).toBe(true);
     expect(p2Unit.alive).toBe(false);
+  });
+});
+
+/**
+ * 탄창 잔량은 화면이 보여줘야 하는 값인데 `charges`와 `cooldowns` 두 곳에서 유도된다.
+ * UI가 직접 계산하면 쿨타임의 +1(같은 턴 끝에 깎일 몫)을 몰라 휴식 턴수를 하나씩 더 표시하게
+ * 되므로, `ammoState()` 한 곳만 쓰게 하고 그 함수를 여기서 잠근다.
+ */
+describe('ammoState — 탄창식 기본 공격의 화면 표시용 단일 근거', () => {
+  it('탄창식이 아닌 기물은 null이라 "해당 없음"과 "0발"이 구별된다', () => {
+    const state = emptyState();
+    expect(ammoState(addUnit(state, 'tank1', 'p1', { x: 0, y: 0 }))).toBeNull();
+  });
+
+  it('쏘기 전에는 탄창이 꽉 차 있다', () => {
+    const state = emptyState();
+    const d1 = addUnit(state, 'dealer1', 'p1', { x: 0, y: 0 });
+    expect(ammoState(d1)).toEqual({ magazine: 2, remaining: 2, restingTurns: 0 });
+  });
+
+  it('한 발 쏘면 잔탄만 줄고 아직 쉬지 않는다', () => {
+    const state = emptyState();
+    const d1 = addUnit(state, 'dealer1', 'p1', { x: 0, y: 0 });
+    addUnit(state, 'tank1', 'p2', { x: 3, y: 0 });
+
+    resolveTurn(
+      state,
+      plan('p1', 1, { [d1.instanceId]: { baseAction: { kind: 'attack', direction: 'right' } } }),
+      emptyPlan('p2', 1),
+      rngFor('p1'),
+    );
+
+    expect(ammoState(d1)).toEqual({ magazine: 2, remaining: 1, restingTurns: 0 });
+  });
+
+  it('탄창을 비우면 휴식에 들어가고 잔탄이 0이 된다', () => {
+    const state = emptyState();
+    const d1 = addUnit(state, 'dealer1', 'p1', { x: 0, y: 0 });
+    addUnit(state, 'tank1', 'p2', { x: 3, y: 0 });
+    const shoot = { baseAction: { kind: 'attack' as const, direction: 'right' as const } };
+
+    resolveTurn(state, plan('p1', 1, { [d1.instanceId]: shoot }), emptyPlan('p2', 1), rngFor('p1'));
+    resolveTurn(state, plan('p1', 2, { [d1.instanceId]: shoot }), emptyPlan('p2', 2), rngFor('p1'));
+
+    // 공격 단계에서 2로 걸렸다가 같은 턴 종료에 1로 깎인 상태다 — 다음 턴 공격이 불법이므로
+    // 사람이 체감하는 대기도 정확히 1턴이다.
+    expect(ammoState(d1)).toEqual({ magazine: 2, remaining: 0, restingTurns: 1 });
   });
 });

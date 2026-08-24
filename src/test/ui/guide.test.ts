@@ -8,6 +8,7 @@ import {
   attackRangeLabel,
   moveRangeLabel,
   unitDiagram,
+  attackPowerLabel,
 } from '../../components/Guide/rangeDiagram';
 
 /**
@@ -87,6 +88,15 @@ describe('기물 그림 — 엔진이 정한 칸과 같은가', () => {
     expect(at(cells, headsMove, 0, 'move')).toBe(false);
     expect(at(cells, headsMove, 0, 'extraMove')).toBe(true);
     expect(moveRangeLabel(support3)).toBe(`직선 ${tailsMove} 또는 ${headsMove}칸(동전)`);
+  });
+  it('동전으로 갈리는 스탯은 라벨에도 범위로 적힌다 — 뒷면 값만 보이면 화면이 스탯을 낮게 말한다', () => {
+    const support3 = getUnitType('support3');
+    const { tailsAttack, headsAttack } = support3.passive!.payload!;
+    expect(attackPowerLabel(support3)).toBe(`${tailsAttack} 또는 ${headsAttack}(동전)`);
+    // 동전이 없는 기물은 그냥 숫자다.
+    expect(attackPowerLabel(getUnitType('tank1'))).toBe(String(getUnitType('tank1').attack));
+    // 공격을 못 하는 기물은 숫자가 아니라 —.
+    expect(attackPowerLabel(getUnitType('support2'))).toBe('—');
   });
 });
 

@@ -9,6 +9,7 @@ import { MiniBoard, type MiniMark, type MiniToken } from './MiniBoard';
 import {
   DIAGRAM_BOARD,
   DIAGRAM_ORIGIN,
+  attackPowerLabel,
   attackRangeLabel,
   moveRangeLabel,
   skillGateLabel,
@@ -88,13 +89,15 @@ function UnitCard({ typeDef }: { typeDef: UnitTypeDef }) {
         <span className={`guide-role guide-role-${typeDef.role}`}>{ROLE_LABEL[typeDef.role]}</span>
         <h4>{typeDef.name.replace(/^.*—\s*/, '')}</h4>
       </header>
+      {/* 토큰에 판 위와 같은 글자를 찍는다 — 도움말에서 외운 글자가 대전 화면에서 그대로 보여야
+          "이게 그때 그 기물"이라는 연결이 생긴다. */}
       <MiniBoard
         board={DIAGRAM_BOARD}
         cellSize={13}
         fills={fills}
         dots={dots}
         rings={rings}
-        tokens={[{ position: DIAGRAM_ORIGIN, owner: 'p1', typeId: typeDef.id }]}
+        tokens={[{ position: DIAGRAM_ORIGIN, owner: 'p1', typeId: typeDef.id, label: typeDef.shortLabel }]}
         title={`${typeDef.name} 이동·사거리`}
       />
       <dl className="guide-stats">
@@ -104,7 +107,7 @@ function UnitCard({ typeDef }: { typeDef: UnitTypeDef }) {
         </div>
         <div>
           <dt>공격력</dt>
-          <dd>{typeDef.canAttack ? typeDef.attack : '—'}</dd>
+          <dd>{attackPowerLabel(typeDef)}</dd>
         </div>
         <div>
           <dt>이동</dt>

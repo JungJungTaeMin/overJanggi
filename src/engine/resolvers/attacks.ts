@@ -1,7 +1,8 @@
-import type { ActionPlan, Direction, GameState, Position, ResolutionEvent, UnitInstance, UnitTurnPlan } from '../types';
+import type { ActionPlan, Direction, GameState, Position, ResolutionEvent, UnitTurnPlan } from '../types';
 import { getUnitType } from '../../data/unitTypes';
 import { resolvedAttackPower, resolvedAttackShape } from '../unitStats';
-import { ORTHOGONAL_DIRECTIONS, samePosition, step } from '../grid';
+import { samePosition } from '../grid';
+import { flankBonusFor } from '../flankBonus';
 import { attackRangeFor, frontBandCells, lineCells } from '../targeting';
 import { hasActiveEffect } from '../statusEffects';
 import { applyDamage } from '../damage';
@@ -115,8 +116,11 @@ export function resolveAttacks(
         // 측면 교란(dealer4): 대상이 자기 아군과 인접해 있으면 추가 피해. 조건 충족 여부를 로그에
         // 남긴다 — 이게 없으면 피해 숫자만 보고 보너스가 터졌는지 되짚을 수 없고(버프까지 얹히면
         // 더더욱), 실제로 "조건부 패시브가 사실상 상시인지"를 재려다 이게 막혀 로그부터 고쳤다.
-        const flank = unit.typeId === 'dealer4' && hasAdjacentAlly(occupant, state.units);
-        if (flank) amount += typeDef.passive?.payload?.bonusDamage ?? 0;
+        // 조건과 수치는 flankBonus.ts 한 곳에만 적혀 있다 — 조준 하이라이트가 같은 함수를 부르므로
+        // 화면에 뜬 +N과 실제로 들어가는 피해가 갈라질 수 없다.
+        const bonus = flankBonusFor(unit, occupant, state.units);
+        const flank = bonus > 0;
+        amount += bonus;
         applyDamage(occupant, amount);
         log.push({
           phase: 'attack',
@@ -147,10 +151,3 @@ export function resolveAttacks(
   }
 }
 
-function hasAdjacentAlly(target: UnitInstance, units: UnitInstance[]): boolean {
-  if (!target.position) return false;
-  return ORTHOGONAL_DIRECTIONS.some((dir) => {
-    const adj = step(target.position!, dir);
-    return units.some((u) => u.alive && u.instanceId !== target.instanceId && u.owner === target.owner && u.position && samePosition(u.position, adj));
-  });
-}

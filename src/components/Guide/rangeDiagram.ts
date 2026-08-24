@@ -154,6 +154,23 @@ export function attackRangeLabel(typeDef: UnitTypeDef): string {
   return `${axis} ${shape.range}칸`;
 }
 
+/**
+ * "4 또는 6(동전)"처럼, 공격력도 턴마다 갈릴 수 있다는 것까지 드러나는 라벨.
+ *
+ * 이걸 안 하면 확률·포탑형만 이동·사거리는 동전 표기인데 공격력만 뒷면 값(4)으로 고정돼 보인다 —
+ * 화면이 스탯을 실제보다 낮게 말하는 셈이라, 측면 교란형에서 겪은 것과 같은 종류의 오해를 만든다.
+ */
+export function attackPowerLabel(typeDef: UnitTypeDef): string {
+  if (!typeDef.canAttack) return '—';
+  const payload = typeDef.passive?.id === 'support3_coinflip' ? typeDef.passive.payload : undefined;
+  const heads = payload?.headsAttack;
+  const tails = payload?.tailsAttack;
+  if (typeof heads === 'number' && typeof tails === 'number' && heads !== tails) {
+    return `${tails} 또는 ${heads}(동전)`;
+  }
+  return String(typeDef.attack);
+}
+
 export function moveRangeLabel(typeDef: UnitTypeDef): string {
   const axis = typeDef.diagonalMove ? '직선·대각선' : '직선';
   const heads = coinMoveSpeed(typeDef);

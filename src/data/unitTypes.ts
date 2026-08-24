@@ -16,6 +16,7 @@ export const unitTypes: UnitTypeDef[] = [
   {
     id: 'tank1',
     name: '탱커 1 — 방어 강화형',
+    shortLabel: '방',
     role: 'tank',
     moveSpeed: 1,
     hpLv: 8,
@@ -37,6 +38,7 @@ export const unitTypes: UnitTypeDef[] = [
   {
     id: 'tank2',
     name: '탱커 2 — 돌진·기동형',
+    shortLabel: '돌',
     role: 'tank',
     moveSpeed: 4,
     hpLv: 6,
@@ -59,6 +61,7 @@ export const unitTypes: UnitTypeDef[] = [
   {
     id: 'tank3',
     name: '탱커 3 — 방벽·제어형',
+    shortLabel: '벽',
     role: 'tank',
     moveSpeed: 2,
     hpLv: 8,
@@ -89,6 +92,7 @@ export const unitTypes: UnitTypeDef[] = [
   {
     id: 'dealer1',
     name: '딜러 1 — 장거리 화력형',
+    shortLabel: '저',
     role: 'dealer',
     moveSpeed: 1,
     hpLv: 3,
@@ -109,6 +113,7 @@ export const unitTypes: UnitTypeDef[] = [
   {
     id: 'dealer2',
     name: '딜러 2 — 시간 역행형',
+    shortLabel: '역',
     role: 'dealer',
     moveSpeed: 3,
     hpLv: 2,
@@ -132,6 +137,7 @@ export const unitTypes: UnitTypeDef[] = [
   {
     id: 'dealer3',
     name: '딜러 3 — 충전 사격형',
+    shortLabel: '충',
     role: 'dealer',
     /**
      * **이동 1 + 대각 이동 가능 / 공격은 직선만** — 조준선과 이동축을 맞바꿨다(사용자 결정).
@@ -221,6 +227,7 @@ export const unitTypes: UnitTypeDef[] = [
   {
     id: 'dealer4',
     name: '딜러 4 — 측면 교란형',
+    shortLabel: '측',
     role: 'dealer',
     moveSpeed: 2,
     hpLv: 4,
@@ -265,6 +272,7 @@ export const unitTypes: UnitTypeDef[] = [
   {
     id: 'support1',
     name: '지원 1 — 범위 회복형',
+    shortLabel: '범',
     role: 'support',
     moveSpeed: 2,
     hpLv: 3,
@@ -293,6 +301,7 @@ export const unitTypes: UnitTypeDef[] = [
   {
     id: 'support2',
     name: '지원 2 — 장거리 회복·구속형',
+    shortLabel: '구',
     role: 'support',
     moveSpeed: 1,
     hpLv: 3,
@@ -366,6 +375,7 @@ export const unitTypes: UnitTypeDef[] = [
   {
     id: 'support3',
     name: '지원 3 — 확률·포탑형',
+    shortLabel: '탑',
     role: 'support',
     // 이동력·공격력은 매 턴 동전으로 정해진다(아래 passive) — 여기 값은 동전이 없을 때의 바닥값이다.
     // 기획서에 사거리 수치가 없어 support1(직선 2)과 같은 근거리 지원 사거리를 기본값으로 둔다.
@@ -438,6 +448,7 @@ export const unitTypes: UnitTypeDef[] = [
 export const turretType: UnitTypeDef = {
   id: 'turret',
   name: '포탑',
+  shortLabel: '＋',
   role: 'support',
   moveSpeed: 0,
   hpLv: 0,
