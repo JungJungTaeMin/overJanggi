@@ -4,6 +4,7 @@ import { healPackAt, isInCaptureZone, isObstacle, samePosition } from '../../eng
 import type { PreviewStep } from '../Planning/actionGeometry';
 import { UnitToken } from './UnitToken';
 import { flankBonusFor } from '../../engine/flankBonus';
+import { boardView } from './orientation';
 
 export const CELL_SIZE = 42;
 
@@ -56,6 +57,11 @@ interface Props {
   previewMoves?: PreviewMove[];
   /** dealer2 시간 역행 기준점 — 충전을 다 쓰면 이 칸·이 체력으로 돌아간다. */
   rewindAnchors?: RewindAnchor[];
+  /**
+   * 판을 180° 돌려 그린다(내 진영을 아래로). **그리는 자리만** 바뀌고 클릭이 돌려주는 좌표는
+   * 엔진 좌표 그대로다 — 근거는 orientation.ts.
+   */
+  flipped?: boolean;
 }
 
 function cellFill(p: Position, board: BoardConfig): string {
@@ -89,11 +95,16 @@ export function Board({
   onUnitClick,
   previewMoves = [],
   rewindAnchors = [],
+  flipped = false,
 }: Props) {
   const cells: Position[] = [];
   for (let y = 0; y < board.height; y++) {
     for (let x = 0; x < board.width; x++) cells.push({ x, y });
   }
+  // 엔진 좌표 → 화면 좌표. 아래에서 픽셀을 계산하는 곳은 **전부** 이 두 함수를 거친다.
+  const view = boardView(board, flipped);
+  const px = (x: number) => (flipped ? board.width - 1 - x : x) * CELL_SIZE;
+  const py = (y: number) => (flipped ? board.height - 1 - y : y) * CELL_SIZE;
   const moveSet = toSet(moveCells);
   const attackSet = toSet(attackCells);
   /**
@@ -142,8 +153,8 @@ export function Board({
           <rect
             key={key}
             className={clickable ? 'board-cell clickable' : 'board-cell'}
-            x={p.x * CELL_SIZE}
-            y={p.y * CELL_SIZE}
+            x={px(p.x)}
+            y={py(p.y)}
             width={CELL_SIZE}
             height={CELL_SIZE}
             fill={fill}
@@ -171,8 +182,8 @@ export function Board({
       {/* 힐팩 — 십자 표시. 먹어서 비어 있는 동안은 회색 점선 + 남은 턴수를 띄운다.
           색만 다르게 하면 "여기 힐팩이 있었나?"를 기억해야 하므로 남은 턴을 숫자로 보여 준다. */}
       {(board.healPacks ?? []).map((pack) => {
-        const cx = pack.position.x * CELL_SIZE + CELL_SIZE / 2;
-        const cy = pack.position.y * CELL_SIZE + CELL_SIZE / 2;
+        const cx = px(pack.position.x) + CELL_SIZE / 2;
+        const cy = py(pack.position.y) + CELL_SIZE / 2;
         const arm = CELL_SIZE * 0.18;
         const thick = CELL_SIZE * 0.07;
         const remaining = healPackTimers[`${pack.position.x},${pack.position.y}`] ?? 0;
@@ -192,8 +203,8 @@ export function Board({
         return (
           <rect
             key={`hl-${key}`}
-            x={x * CELL_SIZE + 2}
-            y={y * CELL_SIZE + 2}
+            x={px(x) + 2}
+            y={py(y) + 2}
             width={CELL_SIZE - 4}
             height={CELL_SIZE - 4}
             fill="none"
@@ -219,8 +230,8 @@ export function Board({
           return (
             <rect
               key={`${prefix}-${key}`}
-              x={x * CELL_SIZE + 2}
-              y={y * CELL_SIZE + 2}
+              x={px(x) + 2}
+              y={py(y) + 2}
               width={CELL_SIZE - 4}
               height={CELL_SIZE - 4}
               fill="none"
@@ -233,8 +244,8 @@ export function Board({
       )}
       {/* 기준점(복귀 지점): 보라색 점선 마름모 + 기준 체력 라벨 */}
       {rewindAnchors.map(({ unit, position, hp }) => {
-        const cx = position.x * CELL_SIZE + CELL_SIZE / 2;
-        const cy = position.y * CELL_SIZE + CELL_SIZE / 2;
+        const cx = px(position.x) + CELL_SIZE / 2;
+        const cy = py(position.y) + CELL_SIZE / 2;
         const s = CELL_SIZE * 0.34;
         return (
           <g key={`anchor-${unit.instanceId}`} pointerEvents="none">
@@ -258,10 +269,10 @@ export function Board({
         return steps.map((s) => (
           <line
             key={`preview-line-${unit.instanceId}-${s.stepIndex}`}
-            x1={s.from.x * CELL_SIZE + CELL_SIZE / 2}
-            y1={s.from.y * CELL_SIZE + CELL_SIZE / 2}
-            x2={s.to.x * CELL_SIZE + CELL_SIZE / 2}
-            y2={s.to.y * CELL_SIZE + CELL_SIZE / 2}
+            x1={px(s.from.x) + CELL_SIZE / 2}
+            y1={py(s.from.y) + CELL_SIZE / 2}
+            x2={px(s.to.x) + CELL_SIZE / 2}
+            y2={py(s.to.y) + CELL_SIZE / 2}
             stroke={s.isExtra ? REWIND_COLOR : ownerColor}
             strokeWidth={s.isExtra ? 2.5 : 1.5}
             strokeDasharray={s.isExtra ? undefined : '4 3'}
@@ -275,8 +286,8 @@ export function Board({
         steps.map((s) => (
           <text
             key={`preview-idx-${unit.instanceId}-${s.stepIndex}`}
-            x={s.to.x * CELL_SIZE + CELL_SIZE - 6}
-            y={s.to.y * CELL_SIZE + 10}
+            x={px(s.to.x) + CELL_SIZE - 6}
+            y={py(s.to.y) + 10}
             textAnchor="middle"
             fontSize={8}
             fontWeight="bold"
@@ -295,8 +306,8 @@ export function Board({
           .filter((s) => s.isSegmentEnd)
           .map((s) => {
             const color = s.segmentIndex === 0 ? ownerColor : REWIND_COLOR;
-            const cx = s.to.x * CELL_SIZE + CELL_SIZE / 2;
-            const cy = s.to.y * CELL_SIZE + CELL_SIZE / 2;
+            const cx = px(s.to.x) + CELL_SIZE / 2;
+            const cy = py(s.to.y) + CELL_SIZE / 2;
             return (
               <g key={`seg-${unit.instanceId}-${s.segmentIndex}-${s.stepIndex}`} pointerEvents="none">
                 <circle cx={cx} cy={cy} r={CELL_SIZE * 0.42} fill="none" stroke={color} strokeWidth={1.5} opacity={0.9} />
@@ -311,8 +322,8 @@ export function Board({
         <rect
           key={`heal-${p.x},${p.y}`}
           className="heal-range-cell"
-          x={p.x * CELL_SIZE + 1.5}
-          y={p.y * CELL_SIZE + 1.5}
+          x={px(p.x) + 1.5}
+          y={py(p.y) + 1.5}
           width={CELL_SIZE - 3}
           height={CELL_SIZE - 3}
           fill="none"
@@ -324,13 +335,14 @@ export function Board({
           key={u.instanceId}
           unit={u}
           cellSize={CELL_SIZE}
+          at={u.position ? view(u.position) : undefined}
           selected={u.instanceId === selectedUnitId}
           bonusDamage={flankTargets.get(u.instanceId)}
           onClick={onUnitClick ? () => onUnitClick(u.instanceId) : undefined}
         />
       ))}
       {previewMoves.map(({ unit, to }) => (
-        <UnitToken key={`preview-${unit.instanceId}`} unit={unit} cellSize={CELL_SIZE} ghost previewPosition={to} />
+        <UnitToken key={`preview-${unit.instanceId}`} unit={unit} cellSize={CELL_SIZE} ghost at={view(to)} />
       ))}
     </svg>
   );

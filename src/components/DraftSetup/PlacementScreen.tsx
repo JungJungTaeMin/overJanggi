@@ -4,6 +4,8 @@ import { createUnitInstance } from '../../engine/createInitialState';
 import { getUnitType } from '../../data/unitTypes';
 import { boardOf, useGameStore } from '../../store/gameStore';
 import { Board } from '../Board/Board';
+import { isBoardFlipped } from '../Board/orientation';
+import { canSeeHiddenInfo } from '../visibility';
 
 interface Slot {
   owner: Owner;
@@ -48,16 +50,22 @@ export function PlacementScreen() {
   const owners: Owner[] = mode === 'local' ? ['p1', 'p2'] : [localOwner];
   const [active, setActive] = useState<Slot | null>({ owner: owners[0], index: 0 });
 
+  /**
+   * 온라인에서는 **상대 진형을 보여 주지 않는다.** 배치는 양쪽이 동시에, 서로 못 보는 채로 정하는
+   * 것이 전제인데(그래서 "상대의 배치를 기다리는 중…"이 뜬다) 판에 그려 버리면 늦게 놓는 쪽이
+   * 상대 진형을 다 보고 맞춰 놓게 된다. 경계선은 components/visibility.ts에 적혀 있다.
+   */
   const previewUnits = useMemo(() => {
     const units: UnitInstance[] = [];
     for (const owner of ['p1', 'p2'] as Owner[]) {
+      if (!canSeeHiddenInfo(mode, localOwner, owner)) continue;
       draftPicks[owner].forEach((typeId, i) => {
         const pos = placementPositions[owner][i];
         if (pos) units.push(createUnitInstance(typeId, owner, pos));
       });
     }
     return units;
-  }, [draftPicks, placementPositions]);
+  }, [draftPicks, placementPositions, mode, localOwner]);
 
   const clickableCells: Position[] = active ? board.startZones[active.owner] : [];
 
@@ -90,7 +98,13 @@ export function PlacementScreen() {
     <div className="placement-layout">
       <div className="board-column">
         <h2>배치 — 각 진영 칸을 클릭해 기물을 배치하세요</h2>
-        <Board board={board} units={previewUnits} clickableCells={clickableCells} onCellClick={handleCellClick} />
+        <Board
+          board={board}
+          units={previewUnits}
+          clickableCells={clickableCells}
+          onCellClick={handleCellClick}
+          flipped={isBoardFlipped(board, localOwner, mode)}
+        />
         <div className="placement-actions">
           {/* 시작 진형은 어차피 시작지점 3행 안에서만 정해진다 — 다섯 칸을 일일이 찍는 대신
               탱커 앞줄·원거리 뒷줄이라는 정석 진형을 한 번에 받고, 마음에 안 드는 기물만 다시 찍는다. */}

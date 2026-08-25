@@ -13,6 +13,8 @@ import { canPlanSkillMove } from './engine/movePath';
 import { UnitPicker } from './components/DraftSetup/UnitPicker';
 import { PlacementScreen } from './components/DraftSetup/PlacementScreen';
 import { Board } from './components/Board/Board';
+import { isBoardFlipped } from './components/Board/orientation';
+import { hidesOpponentInfo } from './components/visibility';
 import { ActionPanel } from './components/Planning/ActionPanel';
 import {
   applyMoveOption,
@@ -55,6 +57,10 @@ function GameScreen({ shortcutsOff }: { shortcutsOff: boolean }) {
   const localOwner = useGameStore((s) => s.localOwner);
   // 로컬 대전은 한 사람이 양쪽을 다 계획한다(디버그 모드). AI·온라인에서는 내 계획만 편집할 수 있다.
   const planningOwners: Owner[] = mode === 'local' ? ['p1', 'p2'] : [localOwner];
+  /** 내 진영이 아래로 오게 판을 돌려 볼지 — 판단은 orientation.ts 한 곳에만 적혀 있다. */
+  const flipped = !!state && isBoardFlipped(state.board, localOwner, mode);
+  /** 상대의 이번 턴 계획(이동 미리보기)을 감출지 — 판단 근거는 components/visibility.ts. */
+  const hideOpponentPlans = hidesOpponentInfo(mode);
   const selectedUnitId = useGameStore((s) => s.selectedUnitId);
   const setSelectedUnit = useGameStore((s) => s.setSelectedUnit);
   const setBaseAction = useGameStore((s) => s.setBaseAction);
@@ -161,13 +167,14 @@ function GameScreen({ shortcutsOff }: { shortcutsOff: boolean }) {
   const firesAfterSkillMove =
     !!attackFrom && !!selectedUnit?.position && !samePosition(attackFrom, selectedUnit.position);
 
-  // 공개(해결) 전 "이렇게 움직일 예정" 미리보기 — 두 플레이어의 이동 계획 전부에 대해 계산한다
-  // (디버그 모드라 양쪽 계획이 항상 같은 화면에 보이므로 소유자 구분 없이 전부 표시).
+  // 공개(해결) 전 "이렇게 움직일 예정" 미리보기. 한 화면을 같이 보는 로컬·AI 대전에서는 양쪽을
+  // 다 그리지만, 온라인에서는 내 계획만 그린다(위 hideOpponentPlans).
   const previewMoves = useMemo<PreviewMove[]>(() => {
     if (!state || !plans || !canPlan) return [];
     const result: PreviewMove[] = [];
     for (const unit of state.units) {
       if (!unit.alive) continue;
+      if (hideOpponentPlans && unit.owner !== localOwner) continue;
       const unitPlan = plans[unit.owner].actions[unit.instanceId];
       // 기본 이동뿐 아니라 **기술이 만든 이동**도 미리보기에 나와야 한다(경로가 없으면 빈 배열이 온다).
       if (!unitPlan) continue;
@@ -176,7 +183,7 @@ function GameScreen({ shortcutsOff }: { shortcutsOff: boolean }) {
       if (to) result.push({ unit, to, steps });
     }
     return result;
-  }, [state, plans, canPlan]);
+  }, [state, plans, canPlan, hideOpponentPlans, localOwner]);
 
   /**
    * 계획한 회복 기술이 닿는 칸. 회복은 이동(1단계) 뒤인 4단계라 **이동 도착 칸 기준**으로 그려야
@@ -377,6 +384,7 @@ function GameScreen({ shortcutsOff }: { shortcutsOff: boolean }) {
             onUnitClick={handleUnitClick}
             previewMoves={previewMoves}
             rewindAnchors={rewindAnchors}
+            flipped={flipped}
           />
           {selectedUnit && (moveOptions.length > 0 || attackOptions.length > 0) && (
             <>

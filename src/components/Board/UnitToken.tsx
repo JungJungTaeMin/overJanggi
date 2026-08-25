@@ -9,10 +9,15 @@ interface Props {
   onClick?: () => void;
   /**
    * 공개(해결) 전 "이렇게 움직일 예정" 미리보기 토큰으로 그릴 때 사용.
-   * true면 unit.position 대신 previewPosition에 반투명·점선 테두리로 그리며 클릭/HP바/상태뱃지는 생략한다.
+   * 반투명·점선 테두리로 그리며 클릭/HP바/상태뱃지는 생략한다.
    */
   ghost?: boolean;
-  previewPosition?: Position;
+  /**
+   * **그릴 칸.** 엔진 좌표가 아니라 Board가 시점 변환(orientation.ts)을 마친 화면 좌표다 —
+   * 판을 뒤집어 보는 쪽에서는 `unit.position`과 다르다. 미리보기 토큰은 도착 예정 칸이 온다.
+   * Board는 언제나 이 값을 넘기고, 생략되면 좌표 그대로 그린다.
+   */
+  at?: Position;
   /**
    * 지금 조준 중인 기물의 패시브가 이 대상에게 얹는 추가 피해. 0이나 undefined면 안 그린다.
    * 값을 받아서 그리기만 한다 — 조건 판정은 engine/flankBonus.ts가 하고 Board가 넘긴다.
@@ -23,8 +28,8 @@ interface Props {
 const OWNER_COLOR: Record<string, string> = { p1: '#2563eb', p2: '#dc2626' };
 
 /** 역할별 실루엣: 탱커=사각, 딜러=삼각, 지원=원. 이모지 대신 순수 SVG 도형으로 구분한다. */
-export function UnitToken({ unit, cellSize, selected, onClick, ghost, previewPosition, bonusDamage }: Props) {
-  const position = ghost ? previewPosition : unit.position;
+export function UnitToken({ unit, cellSize, selected, onClick, ghost, at, bonusDamage }: Props) {
+  const position = at ?? unit.position;
   if (!position) return null;
   const typeDef = getUnitType(unit.typeId);
   const cx = position.x * cellSize + cellSize / 2;
