@@ -32,8 +32,20 @@ export function UnitToken({ unit, cellSize, selected, onClick, ghost, at, bonusD
   const position = at ?? unit.position;
   if (!position) return null;
   const typeDef = getUnitType(unit.typeId);
-  const cx = position.x * cellSize + cellSize / 2;
-  const cy = position.y * cellSize + cellSize / 2;
+  /**
+   * **칸으로 가는 이동은 그룹 transform이 맡고, 안쪽 도형은 원점에 그린다.**
+   *
+   * 예전에는 도형·글자·체력바가 저마다 절대 좌표를 들고 있었다. 그래서 기물이 칸을 옮기면 화면이
+   * 순간이동했고, 특히 해결을 단계별로 재생하는 지금은 「1. 이동」이 **움직임이 아니라 점프 컷**으로
+   * 보였다 — 한 단계를 통째로 이동에 쓰면서 정작 이동은 안 보이는 셈이었다.
+   *
+   * 위치를 transform 한 곳으로 모으면 CSS transition 한 줄로 기물이 미끄러진다. 좌표 계산은
+   * 그대로라 판을 뒤집어 보는 쪽(orientation.ts)도 영향이 없다.
+   */
+  const tx = position.x * cellSize + cellSize / 2;
+  const ty = position.y * cellSize + cellSize / 2;
+  const cx = 0;
+  const cy = 0;
   const color = OWNER_COLOR[unit.owner];
   const r = cellSize * 0.32;
   const hpRatio = unit.maxHp > 0 ? Math.max(0, unit.currentHp / unit.maxHp) : 0;
@@ -87,7 +99,7 @@ export function UnitToken({ unit, cellSize, selected, onClick, ghost, at, bonusD
 
   if (ghost) {
     return (
-      <g opacity={0.45} pointerEvents="none">
+      <g className="unit-token" transform={`translate(${tx}, ${ty})`} opacity={0.45} pointerEvents="none">
         {shape}
         <text {...labelProps}>{typeDef.shortLabel}</text>
       </g>
@@ -97,7 +109,13 @@ export function UnitToken({ unit, cellSize, selected, onClick, ghost, at, bonusD
   const activeEffects = unit.statusEffects.map((e) => e.type).join(', ');
 
   return (
-    <g opacity={unit.respawnTurnsRemaining !== null ? 0.4 : 1} onClick={onClick} cursor={onClick ? 'pointer' : 'default'}>
+    <g
+      className="unit-token"
+      transform={`translate(${tx}, ${ty})`}
+      opacity={unit.respawnTurnsRemaining !== null ? 0.4 : 1}
+      onClick={onClick}
+      cursor={onClick ? 'pointer' : 'default'}
+    >
       {selected && <circle cx={cx} cy={cy} r={r + 5} fill="none" stroke="#facc15" strokeWidth={2} />}
       {/* 조준 중인 기물의 패시브가 이 대상에 얹힐 때 — 사거리 안에 여럿이면 어느 쪽이 이득인지
           클릭 전에 보여야 한다. 공격 계열이라 하이라이트(주황)와 같은 색을 쓴다. */}

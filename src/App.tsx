@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Direction, Owner, Position, UnitInstance, UnitTurnPlan } from './engine/types';
-import { useGameStore } from './store/gameStore';
+import { currentReplayStep, useGameStore } from './store/gameStore';
 import { DIFFICULTY_PROFILES } from './ai/difficulty';
 import { ModeMenu } from './components/Menu/ModeMenu';
 import { GuideOverlay } from './components/Guide/GuideOverlay';
@@ -13,7 +13,9 @@ import { canPlanSkillMove } from './engine/movePath';
 import { UnitPicker } from './components/DraftSetup/UnitPicker';
 import { PlacementScreen } from './components/DraftSetup/PlacementScreen';
 import { Board } from './components/Board/Board';
+import { PlaybackBar } from './components/Board/PlaybackBar';
 import { isBoardFlipped } from './components/Board/orientation';
+import { stepDurationMs, stepSummary, stepVisuals } from './components/Board/resolutionMarkers';
 import { hidesOpponentInfo } from './components/visibility';
 import { ActionPanel } from './components/Planning/ActionPanel';
 import {
@@ -33,6 +35,7 @@ import {
   previewMoveDestination,
   previewMoveSteps,
 } from './components/Planning/actionGeometry';
+import { aimSummary, computeAimMarks } from './components/Planning/aimPreview';
 import type { PreviewMove, RewindAnchor } from './components/Board/Board';
 import { Scoreboard } from './components/Hud/Scoreboard';
 import { UnitStatusList } from './components/Hud/UnitStatusList';
@@ -45,6 +48,9 @@ function isEditableTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
   return !!el && ['INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName);
 }
+
+/** 재생 중이 아닐 때 넘기는 "직전 단계 없음". 매번 새 []를 만들면 useMemo가 통째로 무의미해진다. */
+const NO_UNITS: UnitInstance[] = [];
 
 /**
  * `shortcutsOff`는 도움말이 열려 있는 동안 켜진다. 도움말 위에서 Space를 누르면 뒤에 깔린 판이
@@ -68,8 +74,33 @@ function GameScreen({ shortcutsOff }: { shortcutsOff: boolean }) {
   const setSkillMove = useGameStore((s) => s.setSkillMove);
   const resolve = useGameStore((s) => s.resolve);
 
+  /**
+   * **단계별 재생.** 엔진은 지금도 턴을 한 번에 끝까지 계산한다 — 여기서 하는 일은 그 도중에
+   * 떠 둔 사진(engine/replay.ts)을 차례로 넘겨 보여 주는 것뿐이라, 규칙은 조금도 관여하지 않는다.
+   * 재생 중에는 계획 입력을 통째로 막는다(아래 canPlan) — 지나간 판을 보면서 다음 턴 계획을
+   * 찍게 두면, 클릭한 칸과 눈에 보이던 칸이 서로 다른 시점의 것이 된다.
+   */
+  const replay = useGameStore((s) => s.replay);
+  const replayIndex = useGameStore((s) => s.replayIndex);
+  const replayPlaying = useGameStore((s) => s.replayPlaying);
+  const replayPaused = useGameStore((s) => s.replayPaused);
+  const advanceReplay = useGameStore((s) => s.advanceReplay);
+  const replayStep = useGameStore(currentReplayStep);
+
+  // 죽은 기물은 position이 사라지므로, 직전 단계의 판을 함께 넘겨 마지막으로 서 있던 자리를 찾게 한다.
+  const previousStepUnits = replayStep && replay && replayIndex > 0 ? replay.steps[replayIndex - 1].units : NO_UNITS;
+  const visuals = useMemo(() => stepVisuals(replayStep, previousStepUnits), [replayStep, previousStepUnits]);
+  const replaySummary = stepSummary(replayStep, visuals.marks);
+
+  // 한 단계를 보여 주는 시간은 그 단계에 실제로 벌어진 일의 양이 정한다.
+  useEffect(() => {
+    if (!replayPlaying || replayPaused) return;
+    const timer = setTimeout(advanceReplay, stepDurationMs(visuals.marks));
+    return () => clearTimeout(timer);
+  }, [replayPlaying, replayPaused, replayIndex, visuals, advanceReplay]);
+
   const selectedUnit = state && selectedUnitId ? state.units.find((u) => u.instanceId === selectedUnitId) ?? null : null;
-  const canPlan = !!state && state.phase === 'planning';
+  const canPlan = !!state && state.phase === 'planning' && !replayPlaying;
 
   /** 내가 이번 턴 계획을 세워야 하는 기물들 — 패널에 보이는 순서 그대로다(자동 넘기기 순서이기도 하다). */
   const planningUnits = useMemo<UnitInstance[]>(() => {
@@ -95,11 +126,14 @@ function GameScreen({ shortcutsOff }: { shortcutsOff: boolean }) {
   const autoSelectedTurn = useRef<number | null>(null);
   useEffect(() => {
     if (!state || state.phase !== 'planning') return;
+    // 재생이 끝날 때까지 미룬다 — 재생 도중에 기물이 잡히면 지나간 판 위에 초록 칸이 떠 버린다.
+    // (여기서 그냥 빠져나가면 turnNumber 표시가 남지 않아 재생이 끝난 뒤 자연히 다시 걸린다.)
+    if (replayPlaying) return;
     if (autoSelectedTurn.current === state.turnNumber) return;
     autoSelectedTurn.current = state.turnNumber;
     const first = planningUnits.find(isUnplanned) ?? planningUnits[0];
     if (first) setSelectedUnit(first.instanceId);
-  }, [state, planningUnits, isUnplanned, setSelectedUnit]);
+  }, [state, planningUnits, isUnplanned, setSelectedUnit, replayPlaying]);
 
   const storedPlan = selectedUnit && plans ? plans[selectedUnit.owner].actions[selectedUnit.instanceId] : undefined;
   // 계획이 아직 없으면 "행동 없음"으로 취급한다 — 아래 계산들은 계획 전체(기본 행동 + 기술 + 기술 이동)를
@@ -163,6 +197,15 @@ function GameScreen({ shortcutsOff }: { shortcutsOff: boolean }) {
     return computeAttackOptions(selectedUnit, state.board, attackFrom);
   }, [state, canPlan, selectedUnit, selectedPlan, attackFrom]);
 
+  /**
+   * 지금 조준하면 무엇이 맞는가 — 주황 칸은 **사선이 뻗는 범위**일 뿐이라 "여기 쏘면 맞는다"가
+   * 아니다. 판정은 해결 단계가 쓰는 engine/aim.ts 그대로다(Planning/aimPreview.ts 경유).
+   */
+  const aimMarks = useMemo(() => {
+    if (!state || !selectedUnit || !attackFrom || attackOptions.length === 0) return [];
+    return computeAimMarks(selectedUnit, state.units, state.board, attackFrom, attackOptions, state.turnNumber);
+  }, [state, selectedUnit, attackFrom, attackOptions]);
+
   /** 기술 이동으로 지금 서 있는 칸이 아닌 곳에서 쏘게 되는지 — 보드 안내문에서 도착 칸을 알려 준다. */
   const firesAfterSkillMove =
     !!attackFrom && !!selectedUnit?.position && !samePosition(attackFrom, selectedUnit.position);
@@ -198,17 +241,20 @@ function GameScreen({ shortcutsOff }: { shortcutsOff: boolean }) {
 
   // dealer2 시간 역행 기준점: 이미 기록된 스냅샷을 보드에 표시한다.
   const rewindAnchors = useMemo<RewindAnchor[]>(() => {
-    if (!state) return [];
-    return state.units
+    // 기준점도 판의 일부라 재생 중에는 그 단계의 것을 그린다 — 안 그러면 되돌아간 뒤의 기준점이
+    // 되돌아가기 전 장면에 미리 떠 있게 된다.
+    const source = replayStep ? replayStep.units : state?.units;
+    if (!source) return [];
+    return source
       .filter((u) => u.alive && u.rewindSnapshot)
       .map((u) => ({ unit: u, position: u.rewindSnapshot!.position, hp: u.rewindSnapshot!.hp }));
-  }, [state]);
+  }, [state, replayStep]);
 
   // 단축키: A 공격 / M 이동 / S 기술1 / U 기술2 / H 힐(치유 계열 기술) — 선택된 유닛에만 적용.
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (shortcutsOff) return;
-      if (!state || state.phase !== 'planning' || !selectedUnit || !selectedUnit.alive) return;
+      if (shortcutsOff || !canPlan) return;
+      if (!state || !selectedUnit || !selectedUnit.alive) return;
       if (e.ctrlKey || e.metaKey || e.altKey || isEditableTarget(e.target)) return;
 
       const typeDef = getUnitType(selectedUnit.typeId);
@@ -254,7 +300,7 @@ function GameScreen({ shortcutsOff }: { shortcutsOff: boolean }) {
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [state, selectedUnit, setBaseAction, setSkillUse, shortcutsOff]);
+  }, [state, selectedUnit, setBaseAction, setSkillUse, shortcutsOff, canPlan]);
 
   // 턴을 넘기는 건 매 턴 반드시 한 번 하는 조작이라 손이 마우스를 떠나지 않아도 되게 키로도 연다.
   // (Space는 포커스가 남은 버튼을 다시 누르는 기본 동작이 있어 preventDefault로 막는다.)
@@ -263,19 +309,25 @@ function GameScreen({ shortcutsOff }: { shortcutsOff: boolean }) {
       if (shortcutsOff) return;
       if (e.key !== ' ' && e.key !== 'Enter') return;
       if (e.ctrlKey || e.metaKey || e.altKey || isEditableTarget(e.target)) return;
-      if (!state || state.phase !== 'planning') return;
+      // 재생 중에는 Space가 턴을 넘기지 않는다 — 결과를 보는 중에 눌러 다음 턴이 통째로
+      // 빈 계획으로 해결되는 것이 이 화면에서 제일 잃을 게 큰 실수다.
+      if (!canPlan) return;
       e.preventDefault();
       resolve();
     }
     window.addEventListener('keydown', handleResolveKey);
     return () => window.removeEventListener('keydown', handleResolveKey);
-  }, [state, resolve, shortcutsOff]);
+  }, [canPlan, resolve, shortcutsOff]);
 
   if (!state) return null;
 
   // 내가 조종하지 않는 진영의 기물은 보드에서 클릭해도 계획이 바뀌지 않는다(선택해서 보는 것만 가능).
   const controlsSelected = !!selectedUnit && (mode === 'local' || selectedUnit.owner === localOwner);
-  const canPlanClicks = state.phase === 'planning' && !!selectedUnit && selectedUnit.alive && controlsSelected;
+  const canPlanClicks = canPlan && !!selectedUnit && selectedUnit.alive && controlsSelected;
+
+  // 재생 중이면 그 단계의 판을, 아니면 지금 판을 그린다. 이 한 줄이 "판이 무엇을 보여 주는가"의 전부다.
+  const shownUnits = replayStep ? replayStep.units : state.units;
+  const shownHealPackTimers = replayStep ? replayStep.healPackTimers : state.healPackTimers;
 
   /**
    * **행동을 정했으면 다음 기물로 자동으로 넘어간다.** 5기물을 계획하려면 "기물 클릭 → 행동 지정"을
@@ -371,10 +423,14 @@ function GameScreen({ shortcutsOff }: { shortcutsOff: boolean }) {
       </div>
       <div className="main-layout">
         <div className="board-column">
+          <PlaybackBar summary={replaySummary} />
           <Board
             board={state.board}
-            units={state.units}
-            healPackTimers={state.healPackTimers}
+            units={shownUnits}
+            healPackTimers={shownHealPackTimers}
+            marks={visuals.marks}
+            rays={visuals.rays}
+            aimMarks={canPlanClicks && clickMode === 'attack' ? aimMarks : []}
             moveCells={canPlanClicks ? moveOptions.map((o) => o.position) : []}
             attackCells={canPlanClicks ? attackOptions.map((o) => o.position) : []}
             healCells={healCells}
@@ -413,7 +469,7 @@ function GameScreen({ shortcutsOff }: { shortcutsOff: boolean }) {
                   ? attackOptions.length > 0
                     ? `주황색 칸(또는 그 칸의 적 기물)을 클릭하면 ${
                         firesAfterSkillMove && attackFrom ? `기술 이동 도착 칸 (${attackFrom.x}, ${attackFrom.y})에서 ` : ''
-                      }그 방향으로 공격합니다.`
+                      }그 방향으로 공격합니다. ${aimSummary(aimMarks)}`
                     : '지금은 공격할 수 있는 칸이 없습니다.'
                   : moveOptions.length > 0
                     ? moveCursor && moveCursor.segmentIndex > 0

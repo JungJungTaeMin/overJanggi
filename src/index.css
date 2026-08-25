@@ -139,6 +139,127 @@ select, input {
   opacity: 0.85;
 }
 
+/* ── 단계별 해결 재생 ─────────────────────────────────────────────
+   판 위 표시(-8 / +3 / 빗나감)는 **나타나는 것 자체가 신호**라 살짝 튀어오르게 한다 —
+   가만히 놓여 있으면 판에 원래 있던 라벨과 구분되지 않는다. */
+.board-mark {
+  animation: mark-pop 180ms ease-out;
+}
+
+@keyframes mark-pop {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.board-ray {
+  animation: ray-in 160ms ease-out;
+}
+
+@keyframes ray-in {
+  from { opacity: 0; }
+  to { opacity: 0.85; }
+}
+
+/* 기물이 칸을 옮길 때 미끄러지게 한다. 「1. 이동」 단계를 따로 재생하면서 정작 이동은 점프 컷으로
+   보이면, 그 단계는 화면이 한 박자 멈췄다 갱신되는 것으로만 읽힌다 — 어느 기물이 어디서 어디로
+   갔는지가 안 보이니 이동 단계를 나눈 이유 자체가 사라진다.
+   260ms는 재생 간격(단계당 약 900ms)보다 충분히 짧아 다음 단계를 밀지 않는다. */
+.unit-token {
+  transition: transform 260ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 조준선은 **지금 내가 고르고 있는 것**이라 판에 고정된 다른 강조(사거리 칸, 구역 배경)와
+   구분돼야 한다. 천천히 숨 쉬게 두면 "이건 결과가 아니라 예고"라는 뜻이 색 없이도 읽힌다. */
+.aim-mark {
+  animation: aim-breathe 1.6s ease-in-out infinite;
+}
+
+@keyframes aim-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* 움직임을 줄여 달라고 설정한 사용자에게는 전부 끈다 — 재생 자체는 단계 표시로도 따라갈 수 있다. */
+@media (prefers-reduced-motion: reduce) {
+  .unit-token { transition: none; }
+  .board-mark, .board-ray, .aim-mark { animation: none; }
+}
+
+.playback-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+/* 재생 중임을 판 옆에서 바로 알아보게 — 화면이 스스로 움직이는 동안의 유일한 설명이다. */
+.playback-bar.playing {
+  border-color: var(--accent);
+  background: #fffbeb;
+}
+
+.playback-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.playback-steps {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+
+.playback-step {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.playback-step.done {
+  opacity: 0.5;
+}
+
+.playback-step.current {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  opacity: 1;
+}
+
+.playback-summary {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.playback-idle {
+  font-size: 11px;
+}
+
+.btn-tiny {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+/* 재생 중의 점수판은 "지금"이 아니라 "그 단계"의 숫자다 — 색으로 그 사실을 알린다. */
+.scoreboard.replaying {
+  color: var(--accent);
+}
+
 .board-hint {
   margin: 0;
   font-size: 13px;
@@ -536,6 +657,10 @@ select, input {
 .log-dash {
   color: #b91c1c;
   font-weight: 600;
+}
+
+.log-miss {
+  color: var(--muted);
 }
 
 .dash-note {
@@ -956,6 +1081,31 @@ select, input {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
+}
+
+/* 계획 진행도 — 「공개 및 해결」 바로 옆에 붙여야 누르기 직전에 눈에 들어온다. */
+.turn-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.plan-progress {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 한 기물도 지정하지 않은 채 해결하려는 순간만 눈에 띄게 한다. 「대기」도 선택이라 막지는 않으므로
+   빨강(오류)이 아니라 주황(주의)이다 — 색이 "이건 못 누른다"로 읽히면 안 된다. */
+.plan-progress.idle {
+  background: #ffedd5;
+  color: #9a3412;
 }
 
 /* ---------- 도움말(게임 방법) ---------- */

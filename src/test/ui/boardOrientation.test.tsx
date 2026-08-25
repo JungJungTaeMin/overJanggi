@@ -82,13 +82,15 @@ describe('판 뒤집기 — 내 진영을 아래로', () => {
   it('기물도 같은 자리로 따라 그려진다', () => {
     const unit = createUnitInstance('tank1', 'p1', { x: 1, y: 2 });
     const { container } = render(<Board board={board} units={[unit]} flipped />);
-    // 탱커는 사각형 — 칸 배경(board-cell)이 아닌 rect 중에서 찾는다.
-    const shape = [...container.querySelectorAll('rect:not(.board-cell)')][0];
-    const r = CELL_SIZE * 0.32;
+    /**
+     * 칸으로 가는 이동은 토큰 그룹의 transform이 전부 맡는다(도형·글자·체력바는 원점 기준으로
+     * 그린다) — 기물이 칸을 옮길 때 CSS로 미끄러지게 하려고 위치를 한 곳으로 모은 결과다.
+     * 그래서 "어디에 그려졌는가"도 도형의 x/y가 아니라 그룹의 translate에서 읽는다.
+     */
+    const token = container.querySelector('g.unit-token');
     const expectedCx = (board.width - 1 - 1) * CELL_SIZE + CELL_SIZE / 2;
     const expectedCy = (board.height - 1 - 2) * CELL_SIZE + CELL_SIZE / 2;
-    expect(Number(shape.getAttribute('x'))).toBeCloseTo(expectedCx - r);
-    expect(Number(shape.getAttribute('y'))).toBeCloseTo(expectedCy - r);
+    expect(token?.getAttribute('transform')).toBe(`translate(${expectedCx}, ${expectedCy})`);
   });
 
   it('클릭은 그려진 자리와 상관없이 **엔진 좌표**를 돌려준다', () => {

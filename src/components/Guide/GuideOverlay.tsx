@@ -8,6 +8,7 @@ import { useGameStore } from '../../store/gameStore';
 import { MiniBoard, type MiniMark, type MiniToken } from './MiniBoard';
 import { DIAGRAM_BOARD, DIAGRAM_ORIGIN, unitDiagram } from './rangeDiagram';
 import { attackPowerLabel, attackRangeLabel, moveRangeLabel, skillGateLabel, skillReachLabel } from '../statLabels';
+import { PHASE_NAME } from '../phaseLabels';
 
 const ROLE_LABEL: Record<string, string> = { tank: '탱커', dealer: '딜러', support: '지원' };
 
@@ -187,32 +188,33 @@ export function GuideOverlay({ onClose }: { onClose: () => void }) {
           <h3>2. 한 턴은 이렇게 흐른다</h3>
           <p>
             번갈아 두는 게 아니라 <strong>양쪽이 동시에</strong> 계획한다. 상대가 무엇을 할지 모르는 채로 5기물의
-            행동을 정하고, 공개 버튼을 누르면 아래 순서대로 한꺼번에 해결된다.
+            행동을 정하고, 공개 버튼을 누르면 아래 순서대로 해결된다. 판 위에서도 이 순서 그대로
+            한 단계씩 재생되므로, 누가 맞았고 누가 빗나갔는지를 눈으로 따라갈 수 있다.
           </p>
           <ol className="guide-phases">
             <li>
               <span className="guide-phase-no">1</span>
-              <strong>이동</strong>
+              <strong>{PHASE_NAME.movement}</strong>
               <em>이동 기술도 여기서 처리된다.</em>
             </li>
             <li>
               <span className="guide-phase-no">2</span>
-              <strong>공격 전 상태변화</strong>
+              <strong>{PHASE_NAME.preAttack}</strong>
               <em>방벽 · 구속 · 공격 모드.</em>
             </li>
             <li>
               <span className="guide-phase-no">3</span>
-              <strong>공격</strong>
+              <strong>{PHASE_NAME.attack}</strong>
               <em>이동이 끝난 자리 기준으로 맞고 때린다.</em>
             </li>
             <li>
               <span className="guide-phase-no">4</span>
-              <strong>회복</strong>
+              <strong>{PHASE_NAME.heal}</strong>
               <em>이미 죽은 기물은 살릴 수 없다.</em>
             </li>
             <li>
               <span className="guide-phase-no">5</span>
-              <strong>턴 종료</strong>
+              <strong>{PHASE_NAME.endOfTurn}</strong>
               <em>쿨타임 · 부활 · 점령 점수.</em>
             </li>
           </ol>

@@ -5,6 +5,8 @@ import type { PreviewStep } from '../Planning/actionGeometry';
 import { UnitToken } from './UnitToken';
 import { flankBonusFor } from '../../engine/flankBonus';
 import { boardView } from './orientation';
+import type { BoardMark, BoardRay, MarkKind, RayKind } from './resolutionMarkers';
+import type { AimMark } from '../Planning/aimPreview';
 
 export const CELL_SIZE = 42;
 
@@ -62,7 +64,32 @@ interface Props {
    * 엔진 좌표 그대로다 — 근거는 orientation.ts.
    */
   flipped?: boolean;
+  /** 단계 재생 중 판 위에 띄우는 표시(-8 / +3 / 빗나감 / 막힘 / 격추). 근거는 resolutionMarkers.ts. */
+  marks?: BoardMark[];
+  /** 같은 재생의 "누가 누구에게"를 잇는 선. */
+  rays?: BoardRay[];
+  /**
+   * 지금 조준하면 **무엇이 맞는지**(클릭 전 미리보기). 사거리 칸(주황)은 사선이 뻗는 범위일 뿐이라
+   * "여기 쏘면 맞는다"를 뜻하지 않는다 — 근거·판정은 Planning/aimPreview.ts.
+   */
+  aimMarks?: AimMark[];
 }
+
+/** 표시 색 — 판의 다른 강조색(초록=이동, 주황=공격 사거리)과 겹치지 않게 고른 값들. */
+const MARK_STYLE: Record<MarkKind, { fill: string; text: string }> = {
+  damage: { fill: '#dc2626', text: '#ffffff' },
+  heal: { fill: '#15803d', text: '#ffffff' },
+  blocked: { fill: '#0ea5e9', text: '#ffffff' },
+  miss: { fill: '#94a3b8', text: '#ffffff' },
+  death: { fill: '#1f2937', text: '#ffffff' },
+  respawn: { fill: '#7c3aed', text: '#ffffff' },
+};
+
+const RAY_STYLE: Record<RayKind, { stroke: string; dash?: string }> = {
+  hit: { stroke: '#dc2626' },
+  blocked: { stroke: '#0ea5e9', dash: '5 3' },
+  heal: { stroke: '#15803d', dash: '2 3' },
+};
 
 function cellFill(p: Position, board: BoardConfig): string {
   if (isObstacle(p, board)) return '#374151';
@@ -77,6 +104,35 @@ function cellFill(p: Position, board: BoardConfig): string {
 
 function toSet(cells: Position[]): Set<string> {
   return new Set(cells.map((c) => `${c.x},${c.y}`));
+}
+
+/** 조준 미리보기 색 — 맞는다=공격색(주황), 방벽=재생 중 「막힘」과 같은 하늘색, 아군 차단=회색. */
+const AIM_STYLE: Record<AimMark['kind'], { stroke: string; dash?: string; label: string }> = {
+  hit: { stroke: '#ea580c', label: '이 방향으로 쏘면 맞습니다' },
+  ally: { stroke: '#94a3b8', dash: '3 2', label: '아군이 사선을 막고 있습니다 — 비키면 닿습니다' },
+  barrier: { stroke: '#0ea5e9', dash: '3 2', label: '방벽에 막혀 피해가 들어가지 않습니다' },
+};
+
+/**
+ * 한 칸에 여러 방향의 조준 결과가 겹칠 수 있다(범위 공격, 대각·직선을 함께 쏘는 기물).
+ * 겹치면 **가장 유리한 것 하나만** 남긴다 — 같은 칸에 표식을 두 번 겹쳐 그리면 굵기만 늘어나
+ * 무슨 뜻인지 되레 안 읽힌다. 우선순위는 hit > barrier > ally: 때릴 수 있다는 사실이 먼저다.
+ */
+const AIM_RANK: Record<AimMark['kind'], number> = { hit: 2, barrier: 1, ally: 0 };
+
+function dedupeAimMarks(marks: AimMark[]): AimMark[] {
+  const best = new Map<string, AimMark>();
+  for (const m of marks) {
+    const key = `${m.position.x},${m.position.y}`;
+    const prev = best.get(key);
+    if (!prev) {
+      best.set(key, m);
+      continue;
+    }
+    if (AIM_RANK[m.kind] > AIM_RANK[prev.kind]) best.set(key, m);
+    else if (m.kind === 'hit' && prev.kind === 'hit' && (m.damage ?? 0) > (prev.damage ?? 0)) best.set(key, m);
+  }
+  return [...best.values()];
 }
 
 /** 정원 맵 SVG 렌더링 — 구역 배경 → 장애물 → 이동/공격/일반 강조 → 유닛 순서로 그린다. */
@@ -96,6 +152,9 @@ export function Board({
   previewMoves = [],
   rewindAnchors = [],
   flipped = false,
+  marks = [],
+  rays = [],
+  aimMarks = [],
 }: Props) {
   const cells: Position[] = [];
   for (let y = 0; y < board.height; y++) {
@@ -330,6 +389,87 @@ export function Board({
           pointerEvents="none"
         />
       ))}
+      {/* 해결 재생: "누가 누구에게"를 잇는 선. 기물보다 **아래**에 깔아 토큰을 가리지 않게 한다. */}
+      {rays.length > 0 && (
+        <defs>
+          {(Object.keys(RAY_STYLE) as RayKind[]).map((kind) => (
+            <marker
+              key={kind}
+              id={`ray-arrow-${kind}`}
+              viewBox="0 0 8 8"
+              refX="7"
+              refY="4"
+              markerWidth="4"
+              markerHeight="4"
+              orient="auto-start-reverse"
+            >
+              <path d="M0,0 L8,4 L0,8 z" fill={RAY_STYLE[kind].stroke} />
+            </marker>
+          ))}
+        </defs>
+      )}
+      {rays.map((ray) => (
+        <line
+          key={ray.key}
+          className="board-ray"
+          x1={px(ray.from.x) + CELL_SIZE / 2}
+          y1={py(ray.from.y) + CELL_SIZE / 2}
+          x2={px(ray.to.x) + CELL_SIZE / 2}
+          y2={py(ray.to.y) + CELL_SIZE / 2}
+          stroke={RAY_STYLE[ray.kind].stroke}
+          strokeWidth={2.5}
+          strokeDasharray={RAY_STYLE[ray.kind].dash}
+          markerEnd={`url(#ray-arrow-${ray.kind})`}
+          opacity={0.85}
+          pointerEvents="none"
+        />
+      ))}
+      {/* 조준 미리보기(클릭 전). 유닛보다 **먼저** 그려 토큰이 위에 오게 한다 — 표식은 대상을
+          가리키는 것이지 대상을 가리는 것이 아니다. 한 칸에 여러 방향이 겹치면 가장 센 것만 남긴다. */}
+      {dedupeAimMarks(aimMarks).map((m) => {
+        const cx = px(m.position.x) + CELL_SIZE / 2;
+        const cy = py(m.position.y) + CELL_SIZE / 2;
+        const s = CELL_SIZE * 0.44;
+        const style = AIM_STYLE[m.kind];
+        return (
+          <g key={`aim-${m.position.x},${m.position.y}`} className="aim-mark" pointerEvents="none">
+            {/* 조준선 모서리 4개. 원이나 채움을 쓰면 이미 판에 있는 강조(선택 링·측면 교란 링)와
+                섞여 버려서, 겹쳐도 뜻이 갈리는 도형으로 골랐다. */}
+            {[
+              [-1, -1],
+              [1, -1],
+              [-1, 1],
+              [1, 1],
+            ].map(([sx, sy]) => (
+              <path
+                key={`${sx},${sy}`}
+                d={`M ${cx + sx * s} ${cy + sy * s * 0.45} L ${cx + sx * s} ${cy + sy * s} L ${cx + sx * s * 0.45} ${cy + sy * s}`}
+                fill="none"
+                stroke={style.stroke}
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeDasharray={style.dash}
+              />
+            ))}
+            {m.kind === 'hit' && (
+              <text
+                x={cx}
+                y={cy - s - 2}
+                textAnchor="middle"
+                fontSize={10}
+                fontWeight="bold"
+                fill={style.stroke}
+                stroke="#fff"
+                strokeWidth={2.5}
+                paintOrder="stroke"
+              >
+                −{m.damage}
+              </text>
+            )}
+            <title>{style.label}</title>
+          </g>
+        );
+      })}
       {units.map((u) => (
         <UnitToken
           key={u.instanceId}
@@ -344,6 +484,22 @@ export function Board({
       {previewMoves.map(({ unit, to }) => (
         <UnitToken key={`preview-${unit.instanceId}`} unit={unit} cellSize={CELL_SIZE} ghost at={view(to)} />
       ))}
+      {/* 해결 재생 표시(-8 / +3 / 빗나감 / 막힘). 기물 **위**에 그린다 — 가려지면 없는 것과 같다. */}
+      {marks.map((mark) => {
+        const style = MARK_STYLE[mark.kind];
+        const cx = px(mark.position.x) + CELL_SIZE / 2;
+        // 칸 위 가장자리에 붙이되 판 밖으로 나가지 않게 잡아 둔다(맨 윗줄에서 잘려 안 보이는 것을 막는다).
+        const top = Math.max(1, py(mark.position.y) - 11);
+        const width = Math.max(22, mark.text.length * 8 + 8);
+        return (
+          <g key={mark.key} className="board-mark" pointerEvents="none">
+            <rect x={cx - width / 2} y={top} width={width} height={14} rx={7} fill={style.fill} opacity={0.95} />
+            <text x={cx} y={top + 10.5} textAnchor="middle" fontSize={9.5} fontWeight="bold" fill={style.text}>
+              {mark.text}
+            </text>
+          </g>
+        );
+      })}
     </svg>
   );
 }

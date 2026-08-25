@@ -3,6 +3,7 @@ import type { ActionPlan, BaseAction, BoardConfig, GameState, Owner, Position, R
 import type { CustomMap } from '../maps/mapStorage';
 import { createInitialState } from '../engine/createInitialState';
 import { resolveTurn } from '../engine/resolveTurn';
+import { compactReplay, type ResolutionStep, type TurnReplay } from '../engine/replay';
 import { canPlanSkillMove } from '../engine/movePath';
 import { ROSTER_SIZE } from '../data/constants';
 import { DEFAULT_ROSTER_RULE, canAddPick, isRosterLegal, type RosterRuleId } from '../data/rosterRules';
@@ -99,6 +100,13 @@ export interface StoreSnapshot {
   plans: { p1: ActionPlan; p2: ActionPlan } | null;
   lastLog: ResolutionEvent[];
   /**
+   * 직전 턴의 단계별 재생. 게스트도 자기 화면에서 같은 순서로 넘겨 봐야 하므로 스냅샷에 싣는다.
+   * **재생 위치(replayIndex)는 싣지 않는다** — 재생은 각자의 화면에서 각자 굴러가는 것이라,
+   * 위치까지 동기화하면 호스트가 한 칸 넘길 때마다 통신이 한 번씩 나가고 게스트의 재생은
+   * 자기 속도가 아니라 상대의 프레임에 끌려다니게 된다.
+   */
+  replay: TurnReplay | null;
+  /**
    * 호스트가 고른 맵. 대전이 시작되면 보드가 GameState 안에 들어가지만, **배치 화면은 아직
    * GameState가 없어서** 이 값이 없으면 게스트만 기본 맵 위에 기물을 놓게 된다.
    */
@@ -140,6 +148,19 @@ interface GameStore {
   state: GameState | null;
   plans: { p1: ActionPlan; p2: ActionPlan } | null;
   lastLog: ResolutionEvent[];
+  /** 직전 턴의 단계별 재생(engine/replay.ts). 없으면 재생할 것이 없다는 뜻이다. */
+  replay: TurnReplay | null;
+  /** 지금 보여 주는 단계 번호. 로컬 값이라 스냅샷에 실리지 않는다. */
+  replayIndex: number;
+  /** 재생이 굴러가는 중인지. 이 값이 켜져 있는 동안은 계획 입력을 받지 않는다. */
+  replayPlaying: boolean;
+  /** 재생을 세워 둔 상태(단계는 그대로 보여 주되 자동으로 넘기지 않는다). */
+  replayPaused: boolean;
+  /**
+   * 단계별 재생을 쓸지. 매 턴의 속도를 바꾸는 설정이라 반드시 끌 수 있어야 하고, 매번 다시
+   * 끄게 하면 설정이 아니라 성가심이 되므로 브라우저에 기억시킨다.
+   */
+  playbackEnabled: boolean;
   selectedUnitId: string | null;
   /** 대전에 쓸 커스텀 맵. null이면 기본 '정원' 맵. 판을 다시 시작해도 유지된다. */
   selectedMap: CustomMap | null;
@@ -173,6 +194,16 @@ interface GameStore {
   /** 기술이 만든 이동(기본 행동이 공격일 때 쓰는 이동 경로). undefined면 해제. */
   setSkillMove: (owner: Owner, instanceId: string, skillMove: SkillMove | undefined) => void;
   setSelectedUnit: (instanceId: string | null) => void;
+  /** 재생을 한 단계 넘긴다. 마지막 단계에서 부르면 재생이 끝난다(판은 최종 상태로 돌아온다). */
+  advanceReplay: () => void;
+  /** 재생을 그만두고 곧바로 최종 판을 본다(건너뛰기). */
+  stopReplay: () => void;
+  /** 특정 단계로 바로 간다 — "공격 단계만 다시" 같은 확인은 처음부터 다시 보게 하면 안 된다. */
+  seekReplay: (index: number) => void;
+  togglePauseReplay: () => void;
+  /** 방금 지나간 턴을 처음부터 다시 본다. */
+  restartReplay: () => void;
+  setPlaybackEnabled: (enabled: boolean) => void;
   resolve: () => void;
   resetGame: () => void;
   /** 메뉴로 완전히 되돌아간다(온라인 연결 해제는 netBridge가 별도로 처리). */
@@ -185,8 +216,38 @@ const FRESH = {
   state: null,
   plans: null,
   lastLog: [] as ResolutionEvent[],
+  replay: null as TurnReplay | null,
+  replayIndex: 0,
+  replayPlaying: false,
+  replayPaused: false,
   selectedUnitId: null,
 };
+
+const PLAYBACK_SETTING_KEY = 'simultaneous.stepPlayback';
+
+/** 저장된 재생 설정. 값이 없으면 켜 둔다 — 처음 보는 사람에게 필요한 쪽이 기본값이어야 한다. */
+function loadPlaybackEnabled(): boolean {
+  try {
+    return localStorage.getItem(PLAYBACK_SETTING_KEY) !== 'off';
+  } catch {
+    return true; // 사생활 보호 모드 등으로 localStorage가 막힌 브라우저
+  }
+}
+
+/**
+ * 새 재생이 도착했을 때의 시작 상태. 호스트(resolve)와 게스트(applySnapshot) 양쪽에서 쓰이므로
+ * 한 곳에 적어 둔다 — 두 경로가 갈리면 한쪽 화면만 재생이 안 되는 종류의 버그가 난다.
+ *
+ * 단계가 하나뿐이면 재생하지 않는다. 그건 "아무 일도 없던 턴"이라 넘겨 봐야 같은 그림이다.
+ */
+function beginPlayback(replay: TurnReplay | null, enabled: boolean) {
+  return {
+    replay,
+    replayIndex: 0,
+    replayPlaying: enabled && !!replay && replay.steps.length > 1,
+    replayPaused: false,
+  };
+}
 
 export const useGameStore = create<GameStore>((set, get) => ({
   stage: 'menu',
@@ -196,6 +257,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   online: IDLE_ONLINE,
   selectedMap: null,
   rosterRule: DEFAULT_ROSTER_RULE,
+  playbackEnabled: loadPlaybackEnabled(),
   ...FRESH,
 
   openMapMaker: () => set({ ...FRESH, stage: 'mapMaker' }),
@@ -392,6 +454,39 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   setSelectedUnit: (instanceId) => set({ selectedUnitId: instanceId }),
 
+  advanceReplay: () =>
+    set((s) => {
+      if (!s.replayPlaying || !s.replay) return {};
+      const next = s.replayIndex + 1;
+      // 마지막 단계를 지나면 재생을 끈다 — 그러면 판이 스토어의 최종 상태로 돌아온다.
+      if (next >= s.replay.steps.length) return { replayPlaying: false };
+      return { replayIndex: next };
+    }),
+
+  stopReplay: () => set({ replayPlaying: false, replayPaused: false }),
+
+  togglePauseReplay: () => set((s) => (s.replayPlaying ? { replayPaused: !s.replayPaused } : {})),
+
+  seekReplay: (index) =>
+    set((s) => {
+      if (!s.replay || index < 0 || index >= s.replay.steps.length) return {};
+      // 골라서 보는 것은 곧 "여기서 멈춰 두고 보겠다"는 뜻이라 자동 넘김은 멈춘다.
+      return { replayIndex: index, replayPlaying: true, replayPaused: true };
+    }),
+
+  restartReplay: () =>
+    set((s) => (s.replay && s.replay.steps.length > 1 ? { replayIndex: 0, replayPlaying: true, replayPaused: false } : {})),
+
+  setPlaybackEnabled: (enabled) => {
+    try {
+      localStorage.setItem(PLAYBACK_SETTING_KEY, enabled ? 'on' : 'off');
+    } catch {
+      // 저장이 막혀도 이번 판에서는 설정이 먹어야 한다 — 기억만 못 할 뿐이다.
+    }
+    // 재생 중에 끄면 즉시 최종 판으로 간다(끄기가 곧 건너뛰기여야 한다).
+    set(enabled ? { playbackEnabled: true } : { playbackEnabled: false, replayPlaying: false });
+  },
+
   resolve: () => {
     if (forwardIfGuest({ name: 'resolve', args: [] })) return;
     set((s) => {
@@ -402,13 +497,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
         s.mode === 'ai'
           ? { ...s.plans, [opponentOf(s.localOwner)]: aiActionPlan(s.state, opponentOf(s.localOwner), s.aiDifficulty) }
           : s.plans;
-      const log = resolveTurn(s.state, plans.p1, plans.p2);
+      // 단계별 재생용 스냅샷. 재생을 꺼 뒀으면 아예 뜨지 않는다 — 안 쓸 사진을 여섯 장 찍고
+      // 온라인이면 통신에까지 실어 보낼 이유가 없다.
+      const turnNumber = s.state.turnNumber;
+      const steps: ResolutionStep[] = [];
+      const log = resolveTurn(s.state, plans.p1, plans.p2, Math.random, s.playbackEnabled ? (step) => steps.push(step) : undefined);
       const nextState: GameState = structuredClone(s.state);
+      const replay: TurnReplay | null = steps.length > 0 ? { turnNumber, steps: compactReplay(steps) } : null;
       return {
         state: nextState,
         plans: nextState.phase === 'gameOver' ? plans : plansForTurn(nextState),
         lastLog: log,
         selectedUnitId: null,
+        ...beginPlayback(replay, s.playbackEnabled),
       };
     });
   },
@@ -455,6 +556,17 @@ export function applyRemoteAction(action: RemoteAction): void {
   }
 }
 
+/**
+ * 지금 화면에 보여야 할 단계. 재생 중이 아니면 null이고, 그때는 화면이 스토어의 최종 상태를 본다.
+ *
+ * 판과 점수판이 **같은 통로**로 이 값을 보게 하려고 셀렉터로 빼 뒀다 — 각자 조건을 적으면
+ * 판은 이동 단계를 그리는데 점수판에는 이미 정산된 점수가 떠 있는 어긋남이 생긴다.
+ */
+export function currentReplayStep(s: Pick<GameStore, 'replay' | 'replayIndex' | 'replayPlaying'>): ResolutionStep | null {
+  if (!s.replayPlaying || !s.replay) return null;
+  return s.replay.steps[s.replayIndex] ?? null;
+}
+
 export function storeSnapshot(): StoreSnapshot {
   const s = useGameStore.getState();
   return {
@@ -464,6 +576,7 @@ export function storeSnapshot(): StoreSnapshot {
     state: s.state,
     plans: s.plans,
     lastLog: s.lastLog,
+    replay: s.replay,
     selectedMap: s.selectedMap,
     rosterRule: s.rosterRule,
   };
@@ -471,6 +584,14 @@ export function storeSnapshot(): StoreSnapshot {
 
 /** 게스트가 호스트의 스냅샷을 그대로 받아 적는다. 자기 진영·연결 상태 등 로컬 값은 건드리지 않는다. */
 export function applySnapshot(snapshot: StoreSnapshot): void {
+  const s = useGameStore.getState();
+  const replay = snapshot.replay ?? null;
+  /**
+   * **새 턴의 재생일 때만** 재생을 다시 시작한다. 호스트는 계획을 한 번 만질 때마다 스냅샷을
+   * 통째로 보내는데, 그때마다 steps는 새 배열이라 참조로는 구분되지 않는다 — 턴 번호로 보지
+   * 않으면 상대가 기물 하나를 클릭할 때마다 내 화면의 재생이 처음으로 되감긴다.
+   */
+  const isNewTurn = replay?.turnNumber !== s.replay?.turnNumber;
   useGameStore.setState({
     stage: snapshot.stage,
     draftPicks: snapshot.draftPicks,
@@ -478,6 +599,7 @@ export function applySnapshot(snapshot: StoreSnapshot): void {
     state: snapshot.state,
     plans: snapshot.plans,
     lastLog: snapshot.lastLog,
+    ...(isNewTurn ? beginPlayback(replay, s.playbackEnabled) : { replay }),
     // 맵도 호스트를 따라간다 — 게스트가 자기 브라우저에서 고른 맵은 대전에 쓰이지 않는다.
     selectedMap: snapshot.selectedMap,
     // 편성 규칙도 마찬가지다. 옛 호스트가 보낸 스냅샷에는 이 값이 없을 수 있어 기본 규칙으로 받는다.

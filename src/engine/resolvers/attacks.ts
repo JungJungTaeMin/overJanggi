@@ -1,9 +1,7 @@
 import type { ActionPlan, Direction, GameState, Position, ResolutionEvent, UnitTurnPlan } from '../types';
 import { getUnitType } from '../../data/unitTypes';
 import { resolvedAttackPower, resolvedAttackShape } from '../unitStats';
-import { samePosition } from '../grid';
-import { flankBonusFor } from '../flankBonus';
-import { attackRangeFor, frontBandCells, lineCells } from '../targeting';
+import { aim, type AimResult } from '../aim';
 import { hasActiveEffect } from '../statusEffects';
 import { applyDamage } from '../damage';
 import { killUnit } from '../death';
@@ -90,49 +88,65 @@ export function resolveAttacks(
     const attackPower = resolvedAttackPower(unit, turnNumber);
     // 사거리가 턴마다 갈리는 기물이 있다(support3 동전) — 해결에서는 실제로 굴린 값을 쓴다.
     const shape = resolvedAttackShape(unit, turnNumber);
+    /**
+     * 이 공격이 무엇이든 맞혔는가. 규칙에는 필요 없는 값이지만(사거리 안에 적이 없어도 공격
+     * 행동 자체는 정상 해결된다, §3.4) **화면에는 반드시 필요하다** — 빗나간 공격은 판에
+     * 아무 흔적도 남기지 않아서, 계획을 잘못 세운 것인지 상대가 먼저 비켜 간 것인지는커녕
+     * "내가 쏘긴 쐈나"조차 판만 보고는 알 수 없었다.
+     */
+    let landed = false;
 
-    if (shape.kind === 'aoe' && shape.aoeShape === 'line' && action.kind === 'attack') {
-      // tank3: 전방 1칸 + 좌우 1칸 범위. 범위형 공격은 방벽을 무시하고 관통한다(8장).
-      const cells = frontBandCells(unit.position, action.direction, state.board);
-      for (const cell of cells) {
-        const occupant = state.units.find((u) => u.alive && u.position && samePosition(u.position, cell) && u.owner !== unit.owner);
-        if (!occupant) continue;
-        applyDamage(occupant, attackPower);
-        log.push({ phase: 'attack', type: 'hit', actorId: unit.instanceId, targetId: occupant.instanceId, detail: { damage: attackPower } });
-        if (occupant.currentHp <= 0 && occupant.alive) killUnit(occupant, log);
-      }
-    } else if (shape.kind === 'line' && action.kind === 'attack') {
-      // 사거리는 방향마다 다를 수 있다(dealer3: 직선 4 · 대각 1) — attackRangeFor가 단일 근거다.
-      const cells = lineCells(unit.position, action.direction, attackRangeFor(shape, action.direction), state.board);
-      for (const cell of cells) {
-        const occupant = state.units.find((u) => u.alive && u.position && samePosition(u.position, cell));
-        if (!occupant) continue;
-        if (occupant.owner === unit.owner) break; // 아군을 만나면 사선이 막힘
-        if (hasActiveEffect(occupant, 'barrier', turnNumber)) {
-          log.push({ phase: 'attack', type: 'blockedByBarrier', actorId: unit.instanceId, targetId: occupant.instanceId });
-          break;
-        }
-        let amount = attackPower;
-        // 측면 교란(dealer4): 대상이 자기 아군과 인접해 있으면 추가 피해. 조건 충족 여부를 로그에
-        // 남긴다 — 이게 없으면 피해 숫자만 보고 보너스가 터졌는지 되짚을 수 없고(버프까지 얹히면
-        // 더더욱), 실제로 "조건부 패시브가 사실상 상시인지"를 재려다 이게 막혀 로그부터 고쳤다.
-        // 조건과 수치는 flankBonus.ts 한 곳에만 적혀 있다 — 조준 하이라이트가 같은 함수를 부르므로
-        // 화면에 뜬 +N과 실제로 들어가는 피해가 갈라질 수 없다.
-        const bonus = flankBonusFor(unit, occupant, state.units);
-        const flank = bonus > 0;
-        amount += bonus;
-        applyDamage(occupant, amount);
+    /**
+     * **누가 맞는지는 engine/aim.ts가 정한다.** 이 판정이 여기 안에만 있던 동안 계획 화면은
+     * 사거리 칸만 칠할 수 있었고 "그래서 뭐가 맞느냐"는 답하지 못했다 — 같은 함수를 쓰는 지금은
+     * 미리보기와 실제 결과가 갈라질 수 없다.
+     */
+    const result =
+      action.kind === 'attack'
+        ? aim({
+            unit,
+            from: unit.position,
+            direction: action.direction,
+            units: state.units,
+            board: state.board,
+            shape,
+            power: attackPower,
+            turnNumber,
+          })
+        : ({ kind: 'empty' } as AimResult);
+
+    if (result.kind === 'hit') {
+      for (const target of result.targets) {
+        applyDamage(target.unit, target.damage);
+        landed = true;
+        // 측면 교란(dealer4) 충족 여부를 남긴다 — 없으면 피해 숫자만 보고 보너스가 터졌는지
+        // 되짚을 수 없다(버프까지 얹히면 더더욱). 수치와 조건은 flankBonus.ts 한 곳에만 있다.
         log.push({
           phase: 'attack',
           type: 'hit',
           actorId: unit.instanceId,
-          targetId: occupant.instanceId,
-          detail: { damage: amount, ...(unit.typeId === 'dealer4' ? { flank } : {}) },
+          targetId: target.unit.instanceId,
+          detail: { damage: target.damage, ...(unit.typeId === 'dealer4' ? { flank: target.flank } : {}) },
         });
-        if (occupant.currentHp <= 0 && occupant.alive) killUnit(occupant, log);
-        break; // 직선 공격은 처음 만난 적 1명만 대상으로 한다
+        if (target.unit.currentHp <= 0 && target.unit.alive) killUnit(target.unit, log);
       }
-      // 사거리 안에 적이 없어도 공격 행동 자체는 정상 해결(3.4절) — 별도 처리 불필요
+    } else if (result.kind === 'barrier') {
+      // 막힌 것은 빗나간 것이 아니다 — 조준은 맞았고 방벽이 지웠다. 화면에서도 구분해야
+      // "다음엔 방벽부터 걷어내자"와 "다음엔 다른 칸을 노리자"가 갈린다.
+      landed = true;
+      log.push({ phase: 'attack', type: 'blockedByBarrier', actorId: unit.instanceId, targetId: result.blocker.instanceId });
+    }
+
+    // 사거리 안에 아무도 없었다. 규칙상으로는 공격 행동이 정상 해결된 것이고(3.4절) 상태도 그대로라
+    // 별도 처리가 필요 없지만, **화면에는 남겨야 한다** — 판에 흔적이 없으면 사용자에게는 이 턴에
+    // 공격을 계획했다는 사실 자체가 사라진다.
+    if (!landed) {
+      log.push({
+        phase: 'attack',
+        type: 'noTarget',
+        actorId: unit.instanceId,
+        detail: { at: unit.position, ...(action.kind === 'attack' ? { direction: action.direction } : {}) },
+      });
     }
 
     // 탄창식 기본 공격(딜러1): attackShots발을 연속으로 쏜 뒤에만 쉰다. 쏜 횟수는 charges에 센다

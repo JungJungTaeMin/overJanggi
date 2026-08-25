@@ -1,14 +1,17 @@
 import type { Direction, Position, PriorityEntry } from '../../engine/types';
 import { useGameStore } from '../../store/gameStore';
 import { DIRECTION_LABEL } from '../Planning/SkillTargetPicker';
+import { numberedPhase } from '../phaseLabels';
 
+// 단계 이름은 phaseLabels.ts가 유일한 근거다 — 로그와 재생 바가 같은 단계를 다르게 부르면
+// 플레이어는 없는 단계를 하나 더 있다고 읽는다.
 const PHASE_LABEL: Record<string, string> = {
-  priority: '0.우선순위',
-  movement: '1.이동',
-  preAttack: '2.공격전',
-  attack: '3.공격',
-  heal: '4.회복',
-  endOfTurn: '5.턴종료',
+  priority: numberedPhase('priority'),
+  movement: numberedPhase('movement'),
+  preAttack: numberedPhase('preAttack'),
+  attack: numberedPhase('attack'),
+  heal: numberedPhase('heal'),
+  endOfTurn: numberedPhase('endOfTurn'),
 };
 
 function posLabel(p: Position | null | undefined): string {
@@ -64,6 +67,19 @@ export function ResolutionLog() {
               <li key={i} className="log-skillmove">
                 [{PHASE_LABEL[event.phase] ?? event.phase}] ⇢ 기술 이동 후 공격 — {unitLabel(event.actorId ?? '')} ·{' '}
                 {posLabel(d.from as Position | undefined)}에서{dir ? ` ${DIRECTION_LABEL[dir] ?? String(dir)} 방향` : ''}
+              </li>
+            );
+          }
+          // 빗나간 공격 — 판에 아무 변화도 남기지 않는 사건이라, 로그에서마저 원시 JSON이면
+          // "쏘긴 쐈는데 아무 일도 없었다"를 알 길이 없다.
+          if (event.type === 'noTarget') {
+            const d = event.detail ?? {};
+            const dir = d.direction as Direction | undefined;
+            return (
+              <li key={i} className="log-miss">
+                [{PHASE_LABEL[event.phase] ?? event.phase}] ✕ 빗나감 — {unitLabel(event.actorId ?? '')} ·{' '}
+                {posLabel(d.at as Position | null | undefined)}에서
+                {dir ? ` ${DIRECTION_LABEL[dir] ?? String(dir)} 방향` : ''} · 사거리 안에 적 없음
               </li>
             );
           }

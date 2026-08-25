@@ -55,6 +55,8 @@ function startHostBroadcast(): void {
       s.draftPicks !== prev.draftPicks ||
       s.placementPositions !== prev.placementPositions ||
       s.lastLog !== prev.lastLog ||
+      // 재생도 게스트에게 가야 한다 — 안 보내면 게스트 화면에서는 턴이 여전히 한 번에 튄다.
+      s.replay !== prev.replay ||
       // 규칙·맵은 메뉴에서만 바뀌지만, 연결 뒤에 호스트가 메뉴로 돌아가 바꾸고 다시 시작할 수 있다.
       s.rosterRule !== prev.rosterRule ||
       s.selectedMap !== prev.selectedMap;
