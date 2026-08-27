@@ -85,6 +85,7 @@ function GameScreen({ shortcutsOff }: { shortcutsOff: boolean }) {
   const replayPlaying = useGameStore((s) => s.replayPlaying);
   const replayPaused = useGameStore((s) => s.replayPaused);
   const advanceReplay = useGameStore((s) => s.advanceReplay);
+  const playbackSpeed = useGameStore((s) => s.playbackSpeed);
   const replayStep = useGameStore(currentReplayStep);
 
   // 죽은 기물은 position이 사라지므로, 직전 단계의 판을 함께 넘겨 마지막으로 서 있던 자리를 찾게 한다.
@@ -92,12 +93,12 @@ function GameScreen({ shortcutsOff }: { shortcutsOff: boolean }) {
   const visuals = useMemo(() => stepVisuals(replayStep, previousStepUnits), [replayStep, previousStepUnits]);
   const replaySummary = stepSummary(replayStep, visuals.marks);
 
-  // 한 단계를 보여 주는 시간은 그 단계에 실제로 벌어진 일의 양이 정한다.
+  // 한 단계를 보여 주는 시간은 그 단계에 실제로 벌어진 일의 양이 정하고, 사용자가 고른 속도가 곱한다.
   useEffect(() => {
     if (!replayPlaying || replayPaused) return;
-    const timer = setTimeout(advanceReplay, stepDurationMs(visuals.marks));
+    const timer = setTimeout(advanceReplay, stepDurationMs(visuals.marks, replayStep?.phase, playbackSpeed));
     return () => clearTimeout(timer);
-  }, [replayPlaying, replayPaused, replayIndex, visuals, advanceReplay]);
+  }, [replayPlaying, replayPaused, replayIndex, visuals, replayStep, playbackSpeed, advanceReplay]);
 
   const selectedUnit = state && selectedUnitId ? state.units.find((u) => u.instanceId === selectedUnitId) ?? null : null;
   const canPlan = !!state && state.phase === 'planning' && !replayPlaying;

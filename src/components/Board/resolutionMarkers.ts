@@ -1,6 +1,7 @@
 import type { Position, UnitInstance } from '../../engine/types';
 import type { ReplayPhase, ResolutionStep } from '../../engine/replay';
 import { numberedPhase } from '../phaseLabels';
+import { DEFAULT_PLAYBACK_SPEED, speedFactor, type PlaybackSpeedId } from './playbackSpeed';
 
 /**
  * **해결의 한 단계를 판 위 표시로 옮긴다.**
@@ -141,13 +142,27 @@ export function stepVisuals(step: ResolutionStep | null, previousUnits: UnitInst
   return { marks, rays };
 }
 
+/** 기물이 칸을 미끄러져 가는 데 걸리는 시간(index.css의 `.unit-token` transition과 같은 값). */
+export const TOKEN_GLIDE_MS = 260;
+
 /**
  * 한 단계를 몇 밀리초 보여 줄지. **그 단계에 실제로 벌어진 일의 양**이 정한다 — 전부 같은 시간을
- * 주면 아무도 안 움직인 「2. 변환」이 3연속 처치가 난 「3. 공격」과 똑같이 길어져, 재생이 결과를
+ * 주면 아무도 안 움직인 「2. 공격 전」이 3연속 처치가 난 「3. 공격」과 똑같이 길어져, 재생이 결과를
  * 보여 주는 장치가 아니라 매 턴 물어야 하는 통행료가 된다.
+ *
+ * **이동 단계는 표시가 하나도 없다.** `-8`도 `격추`도 안 뜨니 「일의 양」으로만 재면 가장 짧은
+ * 단계가 되는데, 정작 이 단계는 기물이 실제로 미끄러져 가는 260ms를 **먼저 다 쓰고 나서야** 볼
+ * 것이 생긴다. 그래서 이동에는 글라이드 시간을 따로 얹는다 — 안 얹으면 판이 멈추기도 전에 다음
+ * 단계로 넘어가, 사용자가 이름으로 지목한 바로 그 단계가 제일 안 보이는 단계가 된다.
  */
-export function stepDurationMs(marks: BoardMark[]): number {
-  return Math.min(1600, 520 + marks.length * 260);
+export function stepDurationMs(
+  marks: BoardMark[],
+  phase?: ReplayPhase,
+  speed: PlaybackSpeedId = DEFAULT_PLAYBACK_SPEED,
+): number {
+  const glide = phase === 'movement' ? TOKEN_GLIDE_MS : 0;
+  const base = Math.min(2400, 900 + glide + marks.length * 240);
+  return Math.round(base * speedFactor(speed));
 }
 
 /** 표시가 하나도 없는 단계에서 대신 쓸 한 마디 — "지금 무슨 단계인지"만은 늘 읽혀야 한다. */

@@ -185,16 +185,78 @@ select, input {
   .board-mark, .board-ray, .aim-mark { animation: none; }
 }
 
+/* **이 바는 판 바로 위에 있다.** 높이가 변하면 판 전체가 아래위로 흔들린다 — 재생 중에는 매 단계
+   내용이 바뀌므로, 내용에 따라 크기가 변하는 요소가 하나만 있어도 "화면이 조금씩 흔들린다"가 된다.
+   그래서 줄 수를 **두 줄로 고정**한다(예전에는 flex-wrap으로 내용에 따라 1~2줄을 오갔다). */
 .playback-bar {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 6px;
   font-size: 12px;
   padding: 6px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: #f8fafc;
+}
+
+.playback-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* 줄바꿈을 허용하면 내용 길이가 곧 높이가 된다 — 넘치는 것은 아래에서 잘라 낸다. */
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+/* 단계 칩이 들어가는 줄. 칩 높이(약 20px)로 고정해 두어야 재생 전/중/후에 줄 높이가 같다. */
+.playback-track {
+  min-height: 22px;
+}
+
+/* 「멈춤·건너뛰기」 둘 ↔ 「다시 보기」 하나로 바뀌어도 폭이 안 변하게 자리를 미리 잡는다. */
+.playback-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  min-width: 128px;
+  justify-content: flex-end;
+}
+
+/* 「멈춤」과 「재생」은 글자 수가 같지만 글꼴 폭까지 같지는 않다. */
+.playback-pause {
+  min-width: 46px;
+}
+
+.playback-speed {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+
+.playback-speed-btn {
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 11px;
+  /* 고른 쪽만 굵게 하면 폭이 변해 옆 버튼들이 밀린다 — 색으로만 구분한다. */
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.playback-speed-btn.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.playback-speed-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* 재생 중임을 판 옆에서 바로 알아보게 — 화면이 스스로 움직이는 동안의 유일한 설명이다. */
@@ -216,7 +278,8 @@ select, input {
   display: flex;
   align-items: center;
   gap: 3px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  flex: none;
 }
 
 .playback-step {
@@ -226,6 +289,14 @@ select, input {
   background: #fff;
   color: var(--muted);
   font-size: 11px;
+  /**
+   * **굵기를 여기서 못 박는다.** 예전에는 `.current`만 700으로 굵어졌는데, 굵어진 칩은 폭이
+   * 늘어나므로 단계가 넘어갈 때마다 뒤쪽 칩이 전부 옆으로 밀렸다 — 재생 내내 한 칸씩 계속
+   * 움직이는 셈이라, 이게 "화면이 조금씩 흔들린다"의 가장 큰 원인이었다. 지금 단계는 색으로만
+   * 구분한다(배경 채움이라 굵기보다 오히려 눈에 잘 띈다).
+   */
+  font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -237,16 +308,27 @@ select, input {
   border-color: var(--accent);
   background: var(--accent);
   color: #fff;
-  font-weight: 700;
   opacity: 1;
 }
 
+/* 매 단계 길이가 달라지는 **유일한** 요소다. 남는 폭만 차지하고 넘치면 잘라야 옆 칩과 아래 판이
+   내용 길이에 따라 밀리지 않는다. min-width:0이 없으면 flex 항목은 내용보다 작아지지 않는다. */
 .playback-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-weight: 700;
   color: #0f172a;
 }
 
 .playback-idle {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 11px;
 }
 
@@ -260,6 +342,16 @@ select, input {
   color: var(--accent);
 }
 
+/* 점수가 한 자리에서 두 자리로 넘어갈 때 옆 글자가 밀리지 않게 — 재생 중에는 매 턴 끝에서 바뀐다. */
+.scoreboard {
+  font-variant-numeric: tabular-nums;
+}
+
+/**
+ * 안내문은 고른 기물·클릭 모드에 따라 길이가 크게 달라진다(조준 요약이 붙으면서 더 그렇다).
+ * 한 줄이었다 두 줄이었다 하면 아래의 부활 표시와 로그가 그때마다 밀리므로 **두 줄 자리를 늘
+ * 잡아 둔다**. 재생 중이 아니어도 흔들림은 흔들림이다.
+ */
 .board-hint {
   margin: 0;
   font-size: 13px;
@@ -268,6 +360,9 @@ select, input {
   border: 1px dashed var(--border);
   border-radius: 6px;
   padding: 6px 10px;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
 }
 
 /* 보드 클릭 모드 토글 — 겹친 칸(이동이면서 공격 사거리인 칸)의 클릭 뜻을 정한다. */

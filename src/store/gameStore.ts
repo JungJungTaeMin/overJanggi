@@ -10,6 +10,7 @@ import { DEFAULT_ROSTER_RULE, canAddPick, isRosterLegal, type RosterRuleId } fro
 import { mapDefinition } from '../data/mapDefinitions';
 import { aiActionPlan, aiDraftPicks, aiPlacement } from '../ai/aiPlayer';
 import type { AiDifficulty } from '../ai/difficulty';
+import { DEFAULT_PLAYBACK_SPEED, isPlaybackSpeedId, type PlaybackSpeedId } from '../components/Board/playbackSpeed';
 
 export type Stage = 'menu' | 'mapMaker' | 'draft' | 'placement' | 'game';
 
@@ -161,6 +162,11 @@ interface GameStore {
    * 끄게 하면 설정이 아니라 성가심이 되므로 브라우저에 기억시킨다.
    */
   playbackEnabled: boolean;
+  /**
+   * 재생 속도. 읽을 수 있는 속도는 사람마다 다르고 같은 사람도 처음과 100판째가 다르다 —
+   * 하나로 정해 두면 누군가에게는 반드시 너무 빠르다. 켜고 끄기와 같은 이유로 기억시킨다.
+   */
+  playbackSpeed: PlaybackSpeedId;
   selectedUnitId: string | null;
   /** 대전에 쓸 커스텀 맵. null이면 기본 '정원' 맵. 판을 다시 시작해도 유지된다. */
   selectedMap: CustomMap | null;
@@ -204,6 +210,7 @@ interface GameStore {
   /** 방금 지나간 턴을 처음부터 다시 본다. */
   restartReplay: () => void;
   setPlaybackEnabled: (enabled: boolean) => void;
+  setPlaybackSpeed: (speed: PlaybackSpeedId) => void;
   resolve: () => void;
   resetGame: () => void;
   /** 메뉴로 완전히 되돌아간다(온라인 연결 해제는 netBridge가 별도로 처리). */
@@ -224,6 +231,7 @@ const FRESH = {
 };
 
 const PLAYBACK_SETTING_KEY = 'simultaneous.stepPlayback';
+const PLAYBACK_SPEED_KEY = 'simultaneous.stepPlaybackSpeed';
 
 /** 저장된 재생 설정. 값이 없으면 켜 둔다 — 처음 보는 사람에게 필요한 쪽이 기본값이어야 한다. */
 function loadPlaybackEnabled(): boolean {
@@ -231,6 +239,16 @@ function loadPlaybackEnabled(): boolean {
     return localStorage.getItem(PLAYBACK_SETTING_KEY) !== 'off';
   } catch {
     return true; // 사생활 보호 모드 등으로 localStorage가 막힌 브라우저
+  }
+}
+
+/** 저장된 재생 속도. 모르는 값이 들어 있으면 기본값으로 돌린다(예전 버전이 남긴 값일 수 있다). */
+function loadPlaybackSpeed(): PlaybackSpeedId {
+  try {
+    const saved = localStorage.getItem(PLAYBACK_SPEED_KEY);
+    return isPlaybackSpeedId(saved) ? saved : DEFAULT_PLAYBACK_SPEED;
+  } catch {
+    return DEFAULT_PLAYBACK_SPEED;
   }
 }
 
@@ -258,6 +276,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   selectedMap: null,
   rosterRule: DEFAULT_ROSTER_RULE,
   playbackEnabled: loadPlaybackEnabled(),
+  playbackSpeed: loadPlaybackSpeed(),
   ...FRESH,
 
   openMapMaker: () => set({ ...FRESH, stage: 'mapMaker' }),
@@ -485,6 +504,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
     // 재생 중에 끄면 즉시 최종 판으로 간다(끄기가 곧 건너뛰기여야 한다).
     set(enabled ? { playbackEnabled: true } : { playbackEnabled: false, replayPlaying: false });
+  },
+
+  setPlaybackSpeed: (speed) => {
+    try {
+      localStorage.setItem(PLAYBACK_SPEED_KEY, speed);
+    } catch {
+      // 저장이 막혀도 이번 판에서는 먹어야 한다 — 기억만 못 할 뿐이다.
+    }
+    set({ playbackSpeed: speed });
   },
 
   resolve: () => {

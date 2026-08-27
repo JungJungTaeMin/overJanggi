@@ -1,5 +1,6 @@
 import { useGameStore } from '../../store/gameStore';
 import { REPLAY_PHASE_LABEL } from './resolutionMarkers';
+import { PLAYBACK_SPEEDS } from './playbackSpeed';
 import { PHASE_NAME } from '../phaseLabels';
 
 /**
@@ -11,6 +12,11 @@ import { PHASE_NAME } from '../phaseLabels';
  *
  * 단계 이름은 눌러서 그리로 갈 수 있게 둔다. 지나간 공격 단계를 다시 보려고 턴 전체를 처음부터
  * 재생하게 만들 이유가 없다.
+ *
+ * **이 바는 판 바로 위에 있다.** 그래서 여기서 높이가 1픽셀이라도 변하면 판 전체가 아래위로
+ * 흔들린다 — 재생 중에는 매 단계 내용이 바뀌므로, 내용에 따라 크기가 변하는 요소가 하나라도
+ * 있으면 "화면이 조금씩 흔들린다"가 된다. 그래서 줄 수를 **항상 두 줄로 고정**하고, 길이가
+ * 변하는 것(요약문)은 남는 폭을 차지하며 넘치면 말줄임으로 자른다. 자세한 것은 index.css.
  */
 export function PlaybackBar({ summary }: { summary: string }) {
   const replay = useGameStore((s) => s.replay);
@@ -18,60 +24,90 @@ export function PlaybackBar({ summary }: { summary: string }) {
   const playing = useGameStore((s) => s.replayPlaying);
   const paused = useGameStore((s) => s.replayPaused);
   const enabled = useGameStore((s) => s.playbackEnabled);
+  const speed = useGameStore((s) => s.playbackSpeed);
   const stopReplay = useGameStore((s) => s.stopReplay);
   const restartReplay = useGameStore((s) => s.restartReplay);
   const seekReplay = useGameStore((s) => s.seekReplay);
   const togglePauseReplay = useGameStore((s) => s.togglePauseReplay);
   const setPlaybackEnabled = useGameStore((s) => s.setPlaybackEnabled);
+  const setPlaybackSpeed = useGameStore((s) => s.setPlaybackSpeed);
 
   const steps = replay?.steps ?? [];
   const hasReplay = steps.length > 1;
 
   return (
     <div className={`playback-bar${playing ? ' playing' : ''}`}>
-      <label className="playback-toggle" title="끄면 지금까지처럼 턴 결과가 한 번에 나타납니다.">
-        <input type="checkbox" checked={enabled} onChange={(e) => setPlaybackEnabled(e.target.checked)} />
-        단계별 재생
-      </label>
+      <div className="playback-row">
+        <label className="playback-toggle" title="끄면 지금까지처럼 턴 결과가 한 번에 나타납니다.">
+          <input type="checkbox" checked={enabled} onChange={(e) => setPlaybackEnabled(e.target.checked)} />
+          단계별 재생
+        </label>
 
-      {hasReplay ? (
-        <>
-          <div className="playback-steps">
-            {steps.map((step, i) => (
-              <button
-                key={`${step.phase}-${i}`}
-                type="button"
-                className={`playback-step${playing && i === index ? ' current' : ''}${playing && i < index ? ' done' : ''}`}
-                onClick={() => seekReplay(i)}
-              >
-                {REPLAY_PHASE_LABEL[step.phase]}
+        {/* 재생을 꺼 둔 동안에도 **감추지 않고 흐리게** 둔다 — 감추면 그만큼 줄이 줄었다 늘었다 하고,
+            애초에 이런 설정이 있다는 것 자체를 알 수 없게 된다. */}
+        <div className="playback-speed" role="group" aria-label="재생 속도">
+          {PLAYBACK_SPEEDS.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              className={`playback-speed-btn${speed === s.id ? ' active' : ''}`}
+              disabled={!enabled}
+              onClick={() => setPlaybackSpeed(s.id)}
+              title={`한 단계를 보여 주는 시간을 ${s.factor}배로 합니다.`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+
+        {/* 버튼이 「멈춤·건너뛰기」 둘에서 「다시 보기」 하나로 바뀌어도 폭이 안 변하도록 자리를
+            미리 잡아 둔다 — 안 그러면 재생이 끝나는 순간 줄 전체가 옆으로 밀린다. */}
+        <div className="playback-controls">
+          {hasReplay &&
+            (playing ? (
+              <>
+                <button type="button" className="btn-secondary btn-tiny playback-pause" onClick={togglePauseReplay}>
+                  {paused ? '재생' : '멈춤'}
+                </button>
+                <button type="button" className="btn-secondary btn-tiny" onClick={stopReplay}>
+                  건너뛰기
+                </button>
+              </>
+            ) : (
+              <button type="button" className="btn-secondary btn-tiny" onClick={restartReplay}>
+                다시 보기
               </button>
             ))}
-          </div>
-          {playing ? (
-            <>
-              {/* 재생 중에만 한 줄 요약을 띄운다 — 끝난 뒤에도 남으면 지금 판의 설명으로 오해된다. */}
-              <span className="playback-summary">{summary}</span>
-              <button type="button" className="btn-secondary btn-tiny" onClick={togglePauseReplay}>
-                {paused ? '재생' : '멈춤'}
-              </button>
-              <button type="button" className="btn-secondary btn-tiny" onClick={stopReplay}>
-                건너뛰기
-              </button>
-            </>
-          ) : (
-            <button type="button" className="btn-secondary btn-tiny" onClick={restartReplay}>
-              다시 보기
-            </button>
-          )}
-        </>
-      ) : (
-        // 단계 이름이 데이터에서 오므로 뒤에 조사를 붙이지 않는다 — "회복를"이 나온다.
-        <span className="muted playback-idle">
-          턴을 넘기면 {PHASE_NAME.movement} · {PHASE_NAME.preAttack} · {PHASE_NAME.attack} · {PHASE_NAME.heal} 순서로
-          차례차례 보여 줍니다.
-        </span>
-      )}
+        </div>
+      </div>
+
+      <div className="playback-row playback-track">
+        {hasReplay ? (
+          <>
+            <div className="playback-steps">
+              {steps.map((step, i) => (
+                <button
+                  key={`${step.phase}-${i}`}
+                  type="button"
+                  className={`playback-step${playing && i === index ? ' current' : ''}${playing && i < index ? ' done' : ''}`}
+                  onClick={() => seekReplay(i)}
+                >
+                  {REPLAY_PHASE_LABEL[step.phase]}
+                </button>
+              ))}
+            </div>
+            {/* 재생 중에만 한 줄 요약을 띄운다 — 끝난 뒤에도 남으면 지금 판의 설명으로 오해된다.
+                길이가 매 단계 달라지는 유일한 요소라, 남는 폭만 쓰고 넘치면 잘라야 한다. */}
+            <span className="playback-summary">{playing ? summary : ''}</span>
+          </>
+        ) : (
+          // 단계 이름이 데이터에서 오므로 뒤에 조사를 붙이지 않는다 — "회복를"이 나온다.
+          <span className="muted playback-idle">
+            턴을 넘기면 {PHASE_NAME.movement} · {PHASE_NAME.preAttack} · {PHASE_NAME.attack} · {PHASE_NAME.heal}{' '}
+            순서로 차례차례 보여 줍니다.
+          </span>
+        )}
+      </div>
     </div>
   );
 }
