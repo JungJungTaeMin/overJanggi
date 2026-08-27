@@ -19,6 +19,31 @@ export function plannedMoveSpeed(unit: UnitInstance): number {
   return Math.max(payload.headsMove ?? 0, payload.tailsMove ?? 0);
 }
 
+/**
+ * **동전이 어떻게 나오든 반드시 가는 이동력**(뒷면 기준 = 하한).
+ *
+ * `plannedMoveSpeed`(앞면 기준 상한)와 짝이다. 계획은 상한으로 세우는 게 맞지만, 화면이 상한만
+ * 그리면 **3칸이 보장된 것처럼** 보인다 — 실제로는 절반의 확률로 1칸이다. 상한과 하한을 둘 다
+ * 알아야 "여기까지는 확실하고 저기부터는 운"을 칸 색으로 갈라 그릴 수 있다.
+ */
+export function certainMoveSpeed(unit: UnitInstance): number {
+  const typeDef = getUnitType(unit.typeId);
+  const payload = typeDef.passive?.payload;
+  if (unit.typeId !== 'support3' || !payload) return typeDef.moveSpeed;
+  return Math.min(payload.headsMove ?? typeDef.moveSpeed, payload.tailsMove ?? typeDef.moveSpeed);
+}
+
+/**
+ * 동전 때문에 잘려 나갈 수 있는 이동 칸수(앞면 − 뒷면). 동전으로 안 갈리는 기물은 0.
+ *
+ * 이동력에는 기술·상태이상 보너스가 더 얹히므로 "이번 턴 상한 − 이 값"이 곧 보장 칸수다.
+ * 상한을 어디서 구했든(구간별 용량이든 단일 이동력이든) 같은 폭만큼 잘리기 때문에, 폭으로
+ * 들고 다니면 호출부가 보너스 계산을 다시 하지 않아도 된다.
+ */
+export function coinMoveSwing(unit: UnitInstance): number {
+  return Math.max(0, plannedMoveSpeed(unit) - certainMoveSpeed(unit));
+}
+
 /** 해결 단계에서 쓰는 실제 이동력 — 이번 턴에 굴린 동전 결과를 반영한다. */
 export function resolvedMoveSpeed(unit: UnitInstance, turnNumber: number): number {
   const typeDef = getUnitType(unit.typeId);
@@ -98,6 +123,11 @@ export function resolvedAttackShape(unit: UnitInstance, turnNumber: number): Att
  */
 export function plannedAttackShape(unit: UnitInstance): AttackShape {
   return coinRange(unit, (h, t) => Math.max(h, t));
+}
+
+/** 동전이 어떻게 나오든 반드시 닿는 공격 도형(뒷면 기준 = 하한). `certainMoveSpeed`와 같은 이유. */
+export function certainAttackShape(unit: UnitInstance): AttackShape {
+  return coinRange(unit, (h, t) => Math.min(h, t));
 }
 
 /**

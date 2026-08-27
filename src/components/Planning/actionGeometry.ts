@@ -2,7 +2,7 @@ import type { BaseAction, BoardConfig, Direction, Position, SkillMove, SkillUse,
 import { getUnitType } from '../../data/unitTypes';
 import { ORTHOGONAL_DIRECTIONS, DIAGONAL_DIRECTIONS, reachableSteps, samePosition, step, isWalkable } from '../../engine/grid';
 import { attackRangeFor, lineCells, frontBandCells, isWithinSkillRange, type SkillAxis } from '../../engine/targeting';
-import { plannedAttackShape } from '../../engine/unitStats';
+import { certainAttackShape, coinMoveSwing, plannedAttackShape } from '../../engine/unitStats';
 import { skillRangeSpec } from '../../engine/skillRange';
 import {
   isSkillOnlyMove,
@@ -18,15 +18,34 @@ import {
 } from '../../engine/movePath';
 import { sumMagnitude } from '../../engine/statusEffects';
 
+/**
+ * **동전이 앞면일 때만 닿는 칸인지.**
+ *
+ * 확률·포탑형은 매 턴 동전으로 이동력(1 또는 3)과 사거리(2 또는 3)가 갈리는데, 동전은 계획을
+ * 세운 **뒤** 해결 단계에서 굴러간다. 그래서 계획은 상한(앞면)으로 세우게 두는 것이 맞다 —
+ * 하한으로 잡으면 앞면인 턴에 3칸을 못 쓰고, 굴린 뒤 검증하면 운 나쁜 턴에 계획이 통째로 무효가
+ * 된다(unitStats.ts).
+ *
+ * 문제는 화면이었다. 상한만 그리면 **3칸이 보장된 것처럼** 보이고, 실제로 절반의 확률로 1칸만
+ * 가고 나면 판이 거짓말을 한 셈이 된다. 그래서 칸을 없애는 대신 **표시를 가른다** — 찍을 수는
+ * 있되 "여기부터는 운"이라는 것이 색으로 읽히게.
+ */
 export interface MoveOption {
   position: Position;
   direction: Direction;
   distance: number;
+  lucky?: boolean;
 }
 
 export interface AttackOption {
   position: Position;
   direction: Direction;
+  lucky?: boolean;
+}
+
+/** 계획 화면이 「운이 좋아야 닿는 칸」으로 갈라 그릴 칸들 — 이동·공격 후보에서 그대로 걸러 낸다. */
+export function luckyCells(options: { position: Position; lucky?: boolean }[]): Position[] {
+  return options.filter((o) => o.lucky).map((o) => o.position);
 }
 
 function directionsForAxis(axis?: 'orthogonal' | 'diagonal' | 'both'): Direction[] {
@@ -64,10 +83,14 @@ export function computeMoveOptions(
   const typeDef = getUnitType(unit.typeId);
   const dirs = typeDef.diagonalMove ? [...ORTHOGONAL_DIRECTIONS, ...DIAGONAL_DIRECTIONS] : ORTHOGONAL_DIRECTIONS;
   const passThrough = passesThroughEnemies ? (u: UnitInstance) => u.owner !== unit.owner : undefined;
+  // 동전이 뒷면이면 상한에서 이만큼 잘린다 — 그 너머 칸은 "갈 수도 있는 칸"이지 갈 칸이 아니다.
+  const certainSteps = maxSteps - coinMoveSwing(unit);
   const options: MoveOption[] = [];
   for (const dir of dirs) {
     const cells = reachableSteps(origin, dir, maxSteps, board, allUnits, unit.instanceId, passThrough);
-    cells.forEach(({ position, distance }) => options.push({ position, direction: dir, distance }));
+    cells.forEach(({ position, distance }) =>
+      options.push({ position, direction: dir, distance, lucky: distance > certainSteps }),
+    );
   }
   return options;
 }
@@ -177,13 +200,14 @@ export function computeFixedMoveOptions(unit: UnitInstance, board: BoardConfig, 
   if (cursor.maxSteps <= 0) return [];
   const typeDef = getUnitType(unit.typeId);
   const dirs = typeDef.diagonalMove ? [...ORTHOGONAL_DIRECTIONS, ...DIAGONAL_DIRECTIONS] : ORTHOGONAL_DIRECTIONS;
+  const certainSteps = cursor.maxSteps - coinMoveSwing(unit);
   const options: MoveOption[] = [];
   for (const dir of dirs) {
     const distance = staticRunLimit(cursor.origin, dir, cursor.maxSteps, board);
     if (distance <= 0) continue;
     let position = cursor.origin;
     for (let i = 0; i < distance; i++) position = step(position, dir);
-    options.push({ position, direction: dir, distance });
+    options.push({ position, direction: dir, distance, lucky: distance > certainSteps });
   }
   return options;
 }
@@ -277,16 +301,24 @@ export function computeAttackOptions(
   const typeDef = getUnitType(unit.typeId);
   if (!typeDef.canAttack) return [];
   // 동전으로 사거리가 갈리는 기물(support3)은 앞면 기준 상한으로 하이라이트한다 — 이동력과 같은
-  // 규칙이다. 뒷면 기준으로 그리면 앞면인 턴에 닿는 칸을 화면이 숨기게 된다.
+  // 규칙이다. 뒷면 기준으로 그리면 앞면인 턴에 닿는 칸을 화면이 숨기게 된다. 대신 뒷면 기준
+  // 사거리 너머는 `lucky`로 표시해, 상한을 그리는 것이 "여기까지 보장"이라는 거짓말이 되지 않게 한다.
   const shape = plannedAttackShape(unit);
+  const certain = certainAttackShape(unit);
   const dirs = directionsForAxis(shape.axis);
   const options: AttackOption[] = [];
   for (const dir of dirs) {
-    const cells =
-      shape.kind === 'aoe' && shape.aoeShape === 'line'
-        ? frontBandCells(origin, dir, board)
-        : lineCells(origin, dir, attackRangeFor(shape, dir), board);
-    cells.forEach((position) => options.push({ position, direction: dir }));
+    // 범위 공격은 동전으로 갈리는 기물이 없으므로 밴드 전체가 보장 칸이다.
+    if (shape.kind === 'aoe' && shape.aoeShape === 'line') {
+      frontBandCells(origin, dir, board).forEach((position) => options.push({ position, direction: dir }));
+      continue;
+    }
+    const certainSet = new Set(
+      lineCells(origin, dir, attackRangeFor(certain, dir), board).map((c) => `${c.x},${c.y}`),
+    );
+    lineCells(origin, dir, attackRangeFor(shape, dir), board).forEach((position) =>
+      options.push({ position, direction: dir, lucky: !certainSet.has(`${position.x},${position.y}`) }),
+    );
   }
   return options;
 }

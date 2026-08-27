@@ -30,6 +30,7 @@ import {
   findMoveOption,
   hasPendingMoveSegment,
   isSkillMovePlanning,
+  luckyCells,
   movePlanCursor,
   movePlanFromSegments,
   previewMoveDestination,
@@ -434,6 +435,9 @@ function GameScreen({ shortcutsOff }: { shortcutsOff: boolean }) {
             aimMarks={canPlanClicks && clickMode === 'attack' ? aimMarks : []}
             moveCells={canPlanClicks ? moveOptions.map((o) => o.position) : []}
             attackCells={canPlanClicks ? attackOptions.map((o) => o.position) : []}
+            // 동전이 앞면이어야만 닿는 칸(확률·포탑형). 칸을 빼는 대신 표시를 갈라, 상한을 그리면서도
+            // "3칸이 보장된다"는 거짓말은 하지 않게 한다 — 근거는 Planning/actionGeometry.ts.
+            luckyCells={canPlanClicks ? [...luckyCells(moveOptions), ...luckyCells(attackOptions)] : []}
             healCells={healCells}
             clickPriority={clickMode}
             selectedUnitId={selectedUnitId}

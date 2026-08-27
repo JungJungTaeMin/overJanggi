@@ -179,10 +179,62 @@ select, input {
   50% { opacity: 0.5; }
 }
 
-/* 움직임을 줄여 달라고 설정한 사용자에게는 전부 끈다 — 재생 자체는 단계 표시로도 따라갈 수 있다. */
+/* **탄이 실제로 날아간다.** 화살표 선은 「A가 B를 때렸다」는 결과일 뿐이라, 선만 그리면 공격
+   단계는 정지 화면 두 장으로 끝난다 — 때리는 *순간*이 화면에 없다. 좌표가 매번 달라 keyframe을
+   미리 만들 수 없으므로 이동량은 Board.tsx가 CSS 변수로 넘긴다.
+   340ms는 가장 빠른 재생(단계당 약 540ms)에서도 도착까지 다 보이는 값이다. */
+.board-bullet {
+  animation: bullet-fly 340ms cubic-bezier(0.35, 0, 0.7, 1) both;
+}
+
+@keyframes bullet-fly {
+  from { transform: translate(0, 0); opacity: 0; }
+  15% { opacity: 1; }
+  to { transform: translate(var(--fly-x, 0px), var(--fly-y, 0px)); opacity: 1; }
+}
+
+/* 충격 고리는 **탄이 닿은 뒤에** 터진다. 같이 터뜨리면 원인과 결과가 겹쳐서, 맞아서 터진 것이
+   아니라 원래 거기서 터지고 있던 것으로 보인다. */
+.board-impact {
+  animation: impact-burst 280ms ease-out 320ms both;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+@keyframes impact-burst {
+  from { opacity: 0.9; transform: scale(0.35); }
+  to { opacity: 0; transform: scale(1.5); }
+}
+
+/* **격추 연출.** 죽은 기물은 좌표를 잃고 그 자리에서 그냥 사라진다 — 눈은 없어진 것을 못 보므로,
+   사라짐이 사건으로 읽히려면 사라진 자리에 무언가 한 번 일어나야 한다.
+   고리와 파편은 원점(0,0)에 그려져 있고 칸 중심으로 옮기는 일은 바깥 g가 한다(Board.tsx) —
+   그래서 여기서는 transform-origin을 따로 잡을 것 없이 그대로 확대하면 중심에서 퍼진다. */
+.death-ring {
+  animation: death-ring 520ms ease-out both;
+}
+
+@keyframes death-ring {
+  from { opacity: 0.95; transform: scale(0.45); }
+  to { opacity: 0; transform: scale(2); }
+}
+
+.death-shards {
+  animation: death-shards 460ms cubic-bezier(0.2, 0.6, 0.4, 1) both;
+}
+
+@keyframes death-shards {
+  from { opacity: 1; transform: scale(0.7) rotate(0deg); }
+  to { opacity: 0; transform: scale(1.8) rotate(35deg); }
+}
+
+/* 움직임을 줄여 달라고 설정한 사용자에게는 전부 끈다 — 재생 자체는 단계 표시로도 따라갈 수 있다.
+   탄·충격·격추는 `both`라 끝 상태에 머무르므로, 끄려면 **안 보이게** 해야 한다. animation만
+   없애면 다 퍼진 고리와 출발점에 멈춘 탄이 판에 그대로 박힌다. */
 @media (prefers-reduced-motion: reduce) {
   .unit-token { transition: none; }
   .board-mark, .board-ray, .aim-mark { animation: none; }
+  .board-bullet, .board-impact, .death-ring, .death-shards { display: none; }
 }
 
 /* **이 바는 판 바로 위에 있다.** 높이가 변하면 판 전체가 아래위로 흔들린다 — 재생 중에는 매 단계

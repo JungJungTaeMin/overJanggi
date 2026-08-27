@@ -32,6 +32,12 @@ export interface BoardMark {
   position: Position;
   kind: MarkKind;
   text: string;
+  /**
+   * 이 표시가 가리키는 기물. 격추 표시에서 특히 중요하다 — 죽은 기물은 `position`이 null이라
+   * 판에서 즉시 사라지므로, 어느 편의 무엇이 죽었는지를 **표시 쪽이 들고 있지 않으면** 화면에서
+   * 되찾을 방법이 없다. 격추 연출의 색이 여기서 나온다.
+   */
+  unitId?: string;
 }
 
 export type RayKind = 'hit' | 'blocked' | 'heal';
@@ -69,6 +75,14 @@ export function stepVisuals(step: ResolutionStep | null, previousUnits: UnitInst
     return now.get(id)?.position ?? before.get(id)?.position ?? null;
   };
 
+  /**
+   * **키에 단계 이름을 넣는다.** React는 같은 키를 같은 DOM 노드로 재사용하는데, 예전 키는
+   * 이벤트 순번뿐이라 공격 단계의 `ray-0`과 회복 단계의 `ray-0`이 같은 노드가 됐다. 노드가
+   * 재사용되면 CSS 애니메이션이 **다시 시작하지 않는다** — 날아가는 탄과 터지는 격추 연출이
+   * 하필 두 번째 단계부터 조용히 안 보이게 되는, 찾기 어려운 종류의 버그다.
+   */
+  const k = (name: string) => `${step.phase}-${name}`;
+
   // 같은 단계에서 한 기물이 여러 번 맞거나 여러 곳에서 회복받을 수 있다 — 숫자를 겹쳐 그리는
   // 대신 대상마다 합쳐서 한 번에 보여 준다.
   const damage = new Map<string, number>();
@@ -85,20 +99,20 @@ export function stepVisuals(step: ResolutionStep | null, previousUnits: UnitInst
         // 돌진 관통은 밟고 지나간 것이라 조준선이 없다 — 화살을 그리면 쏜 것처럼 보인다.
         const from = event.type === 'hit' ? positionOf(event.actorId) : null;
         const to = positionOf(event.targetId);
-        if (from && to) rays.push({ key: `ray-${i}`, from, to, kind: 'hit' });
+        if (from && to) rays.push({ key: k(`ray-${i}`), from, to, kind: 'hit' });
         break;
       }
       case 'blockedByBarrier': {
         const to = positionOf(event.targetId);
         const from = positionOf(event.actorId);
-        if (to) marks.push({ key: `blocked-${i}`, position: to, kind: 'blocked', text: '막힘' });
-        if (from && to) rays.push({ key: `ray-${i}`, from, to, kind: 'blocked' });
+        if (to) marks.push({ key: k(`blocked-${i}`), position: to, kind: 'blocked', text: '막힘' });
+        if (from && to) rays.push({ key: k(`ray-${i}`), from, to, kind: 'blocked' });
         break;
       }
       case 'noTarget': {
         // 쏜 자리는 이벤트가 직접 들고 있다 — 공격 시점의 위치라 나중에 찾는 것보다 정확하다.
         const at = (event.detail?.at as Position | null | undefined) ?? positionOf(event.actorId);
-        if (at) marks.push({ key: `miss-${i}`, position: at, kind: 'miss', text: '빗나감' });
+        if (at) marks.push({ key: k(`miss-${i}`), position: at, kind: 'miss', text: '빗나감' });
         break;
       }
       case 'heal':
@@ -111,18 +125,18 @@ export function stepVisuals(step: ResolutionStep | null, previousUnits: UnitInst
           const from = positionOf(event.actorId);
           const to = positionOf(id);
           // 자기 자신을 회복한 것에는 선을 긋지 않는다(숫자만으로 충분하고, 선은 점이 된다).
-          if (from && to && event.actorId !== id) rays.push({ key: `ray-${i}`, from, to, kind: 'heal' });
+          if (from && to && event.actorId !== id) rays.push({ key: k(`ray-${i}`), from, to, kind: 'heal' });
         }
         break;
       }
       case 'death': {
         const at = positionOf(event.actorId);
-        if (at) marks.push({ key: `death-${i}`, position: at, kind: 'death', text: '격추' });
+        if (at) marks.push({ key: k(`death-${i}`), position: at, kind: 'death', text: '격추', unitId: event.actorId });
         break;
       }
       case 'respawn': {
         const at = event.detail?.at as Position | undefined;
-        if (at) marks.push({ key: `respawn-${i}`, position: at, kind: 'respawn', text: '부활' });
+        if (at) marks.push({ key: k(`respawn-${i}`), position: at, kind: 'respawn', text: '부활' });
         break;
       }
       default:
@@ -132,11 +146,11 @@ export function stepVisuals(step: ResolutionStep | null, previousUnits: UnitInst
 
   for (const [id, total] of damage) {
     const at = positionOf(id);
-    if (at && total > 0) marks.push({ key: `dmg-${id}`, position: at, kind: 'damage', text: `-${total}` });
+    if (at && total > 0) marks.push({ key: k(`dmg-${id}`), position: at, kind: 'damage', text: `-${total}` });
   }
   for (const [id, total] of heal) {
     const at = positionOf(id);
-    if (at && total > 0) marks.push({ key: `heal-${id}`, position: at, kind: 'heal', text: `+${total}` });
+    if (at && total > 0) marks.push({ key: k(`heal-${id}`), position: at, kind: 'heal', text: `+${total}` });
   }
 
   return { marks, rays };

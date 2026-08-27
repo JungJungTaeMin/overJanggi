@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type CSSProperties } from 'react';
 import type { BoardConfig, Position, UnitInstance } from '../../engine/types';
 import { healPackAt, isInCaptureZone, isObstacle, samePosition } from '../../engine/grid';
 import type { PreviewStep } from '../Planning/actionGeometry';
@@ -51,6 +51,11 @@ interface Props {
    * 색·툴팁이 이 우선순위를 그대로 따라야 "클릭하면 무슨 일이 일어나는가"가 보드만 보고 읽힌다.
    */
   clickPriority?: 'move' | 'attack';
+  /**
+   * 이동·공격 칸 중 **동전이 앞면이어야만 닿는 칸**(확률·포탑형). 찍을 수는 있지만 보장되지
+   * 않는다는 것이 색으로 읽혀야 한다 — 근거·판정은 Planning/actionGeometry.ts.
+   */
+  luckyCells?: Position[];
   clickableCells?: Position[];
   selectedUnitId?: string | null;
   onCellClick?: (p: Position) => void;
@@ -145,6 +150,7 @@ export function Board({
   attackCells = [],
   healCells = [],
   clickPriority = 'move',
+  luckyCells = [],
   clickableCells = [],
   selectedUnitId,
   onCellClick,
@@ -166,6 +172,7 @@ export function Board({
   const py = (y: number) => (flipped ? board.height - 1 - y : y) * CELL_SIZE;
   const moveSet = toSet(moveCells);
   const attackSet = toSet(attackCells);
+  const luckySet = toSet(luckyCells);
   /**
    * 지금 조준 중인 기물의 패시브가 **어느 대상에게** 얹히는지. 측정에서 이 패시브가 dealer4 전체
    * 피해의 36.3%를 차지하는 것으로 나왔는데(표기 공격력 5, 실효 8.18) 화면에는 아무 단서도 없었다 —
@@ -203,11 +210,16 @@ export function Board({
         const clickable = clickableSet.has(key);
         const isMove = moveSet.has(key);
         const isAttack = attackSet.has(key);
+        // 동전이 앞면이어야만 닿는 칸은 **같은 색의 옅은 톤**을 쓴다. 다른 색을 주면 새로운 뜻으로
+        // 읽히지만, 실제로는 "같은 이동 칸인데 보장이 안 될 뿐"이다.
+        const isLucky = luckySet.has(key);
         let fill = cellFill(p, board);
         // 이동/공격 칸이 겹치면 클릭 처리(handleCellClick)가 지금 모드 쪽을 먼저 보므로 색도 같이 맞춘다.
         const attackFirst = clickPriority === 'attack';
-        if (attackFirst ? isAttack : isMove) fill = attackFirst ? '#fed7aa' : '#bbf7d0';
-        else if (attackFirst ? isMove : isAttack) fill = attackFirst ? '#bbf7d0' : '#fed7aa';
+        const moveFill = isLucky ? '#e8f8ee' : '#bbf7d0';
+        const attackFill = isLucky ? '#fdeee0' : '#fed7aa';
+        if (attackFirst ? isAttack : isMove) fill = attackFirst ? attackFill : moveFill;
+        else if (attackFirst ? isMove : isAttack) fill = attackFirst ? moveFill : attackFill;
         return (
           <rect
             key={key}
@@ -233,6 +245,7 @@ export function Board({
                     : isMove
                       ? '클릭해서 이 칸으로 이동'
                       : '클릭해서 배치'}
+                {isLucky ? ' — 동전이 앞면일 때만 닿습니다(50%)' : ''}
               </title>
             )}
           </rect>
@@ -286,6 +299,9 @@ export function Board({
       ).flatMap(({ prefix, set, color }) =>
         [...set].map((key) => {
           const [x, y] = key.split(',').map(Number);
+          // 보장되지 않는 칸은 **점선**으로 두른다. 옅은 채움만으로는 판 배경색과 섞여 안 읽히는
+          // 칸이 생기는데(시작지점·점령지 위), 테두리는 어디에 놓여도 뜻이 그대로 남는다.
+          const lucky = luckySet.has(key);
           return (
             <rect
               key={`${prefix}-${key}`}
@@ -296,6 +312,8 @@ export function Board({
               fill="none"
               stroke={color}
               strokeWidth={2}
+              strokeDasharray={lucky ? '3 3' : undefined}
+              opacity={lucky ? 0.7 : 1}
               pointerEvents="none"
             />
           );
@@ -408,22 +426,50 @@ export function Board({
           ))}
         </defs>
       )}
-      {rays.map((ray) => (
-        <line
-          key={ray.key}
-          className="board-ray"
-          x1={px(ray.from.x) + CELL_SIZE / 2}
-          y1={py(ray.from.y) + CELL_SIZE / 2}
-          x2={px(ray.to.x) + CELL_SIZE / 2}
-          y2={py(ray.to.y) + CELL_SIZE / 2}
-          stroke={RAY_STYLE[ray.kind].stroke}
-          strokeWidth={2.5}
-          strokeDasharray={RAY_STYLE[ray.kind].dash}
-          markerEnd={`url(#ray-arrow-${ray.kind})`}
-          opacity={0.85}
-          pointerEvents="none"
-        />
-      ))}
+      {/**
+       * **선은 결과이고, 탄은 과정이다.**
+       *
+       * 화살표 선만 그리면 「A가 B를 때렸다」는 사실은 남지만 *때리는 일이 벌어지는 순간*은 없다 —
+       * 판이 한 프레임 만에 결과 그림으로 갈아 끼워지므로, 단계를 나눠 놓고도 공격 단계는 여전히
+       * 정지 화면 두 장이다. 그래서 쏜 자리에서 맞은 자리로 **실제로 날아가는 탄**을 하나 얹는다.
+       *
+       * 좌표별 keyframe을 만들 수는 없으므로 이동량을 CSS 변수로 넘긴다(index.css의 `bullet-fly`).
+       * 도착 시점에 맞춰 늦게 터지는 충격 고리까지가 한 벌이다 — 탄이 아직 날아가는 중에 터지면
+       * 인과가 뒤집혀 보인다.
+       */}
+      {rays.map((ray) => {
+        const x1 = px(ray.from.x) + CELL_SIZE / 2;
+        const y1 = py(ray.from.y) + CELL_SIZE / 2;
+        const x2 = px(ray.to.x) + CELL_SIZE / 2;
+        const y2 = py(ray.to.y) + CELL_SIZE / 2;
+        const style = RAY_STYLE[ray.kind];
+        return (
+          <g key={ray.key} pointerEvents="none">
+            <line
+              className="board-ray"
+              x1={x1}
+              y1={y1}
+              x2={x2}
+              y2={y2}
+              stroke={style.stroke}
+              strokeWidth={2.5}
+              strokeDasharray={style.dash}
+              markerEnd={`url(#ray-arrow-${ray.kind})`}
+              opacity={0.85}
+            />
+            <circle
+              className="board-bullet"
+              cx={x1}
+              cy={y1}
+              // 회복은 총알이 아니다 — 같은 궤적을 쓰되 더 크고 무른 빛으로 그려 뜻을 가른다.
+              r={ray.kind === 'heal' ? 4 : 3}
+              fill={style.stroke}
+              style={{ '--fly-x': `${x2 - x1}px`, '--fly-y': `${y2 - y1}px` } as CSSProperties}
+            />
+            <circle className="board-impact" cx={x2} cy={y2} r={CELL_SIZE * 0.3} fill="none" stroke={style.stroke} strokeWidth={2} />
+          </g>
+        );
+      })}
       {/* 조준 미리보기(클릭 전). 유닛보다 **먼저** 그려 토큰이 위에 오게 한다 — 표식은 대상을
           가리키는 것이지 대상을 가리는 것이 아니다. 한 칸에 여러 방향이 겹치면 가장 센 것만 남긴다. */}
       {dedupeAimMarks(aimMarks).map((m) => {
@@ -484,6 +530,48 @@ export function Board({
       {previewMoves.map(({ unit, to }) => (
         <UnitToken key={`preview-${unit.instanceId}`} unit={unit} cellSize={CELL_SIZE} ghost at={view(to)} />
       ))}
+      {/**
+       * **격추 연출.** 죽은 기물은 그 자리에서 사라진다(position이 null이 되므로 토큰이 아예 안
+       * 그려진다). 그래서 이 게임에서 가장 중요한 사건이 화면에서는 「방금까지 있던 것이 없다」는
+       * 부재로만 나타났다 — 눈은 없어진 것을 못 본다. 사라진 자리에 터지는 고리와 흩어지는 파편을
+       * 남겨, 없어졌다는 사실 자체가 **한 번 일어나는 사건**으로 보이게 한다.
+       *
+       * 색은 죽은 기물 소유자의 색이다. 남의 것이 죽었는지 내 것이 죽었는지를 배지 글자를 읽기
+       * 전에 알아야 하고, 그 판단은 재생 중에 가장 급하다.
+       */}
+      {marks
+        .filter((m) => m.kind === 'death')
+        .map((mark) => {
+          const dead = mark.unitId ? units.find((u) => u.instanceId === mark.unitId) : undefined;
+          const color = dead ? (dead.owner === 'p1' ? '#2563eb' : '#dc2626') : MARK_STYLE.death.fill;
+          const cx = px(mark.position.x) + CELL_SIZE / 2;
+          const cy = py(mark.position.y) + CELL_SIZE / 2;
+          const r = CELL_SIZE * 0.32;
+          return (
+            <g key={`burst-${mark.key}`} transform={`translate(${cx}, ${cy})`} pointerEvents="none">
+              <g className="death-ring">
+                <circle cx={0} cy={0} r={r} fill="none" stroke={color} strokeWidth={2.5} />
+              </g>
+              <g className="death-shards">
+                {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => {
+                  const rad = (deg * Math.PI) / 180;
+                  return (
+                    <line
+                      key={deg}
+                      x1={Math.cos(rad) * r * 0.5}
+                      y1={Math.sin(rad) * r * 0.5}
+                      x2={Math.cos(rad) * r * 1.05}
+                      y2={Math.sin(rad) * r * 1.05}
+                      stroke={color}
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                    />
+                  );
+                })}
+              </g>
+            </g>
+          );
+        })}
       {/* 해결 재생 표시(-8 / +3 / 빗나감 / 막힘). 기물 **위**에 그린다 — 가려지면 없는 것과 같다. */}
       {marks.map((mark) => {
         const style = MARK_STYLE[mark.kind];

@@ -106,7 +106,11 @@ export function UnitToken({ unit, cellSize, selected, onClick, ghost, at, bonusD
     );
   }
 
-  const activeEffects = unit.statusEffects.map((e) => e.type).join(', ');
+  // 동전(coinHeads/coinTails)은 **지난 턴** 결과라 이번 턴 상태로 읽히면 안 된다 — UnitStatusList.tsx.
+  const activeEffects = unit.statusEffects
+    .map((e) => e.type)
+    .filter((t) => t !== 'coinHeads' && t !== 'coinTails')
+    .join(', ');
 
   return (
     <g
