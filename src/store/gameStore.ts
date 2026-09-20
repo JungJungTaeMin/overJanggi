@@ -5,8 +5,7 @@ import { createInitialState } from '../engine/createInitialState';
 import { resolveTurn } from '../engine/resolveTurn';
 import { compactReplay, type ResolutionStep, type TurnReplay } from '../engine/replay';
 import { canPlanSkillMove } from '../engine/movePath';
-import { ROSTER_SIZE } from '../data/constants';
-import { DEFAULT_ROSTER_RULE, canAddPick, isRosterLegal, type RosterRuleId } from '../data/rosterRules';
+import { DEFAULT_ROSTER_RULE, canAddPick, isRosterLegal, rosterSizeOf, type RosterRuleId } from '../data/rosterRules';
 import { mapDefinition } from '../data/mapDefinitions';
 import { aiActionPlan, aiDraftPicks, aiPlacement } from '../ai/aiPlayer';
 import type { AiDifficulty } from '../ai/difficulty';
@@ -368,9 +367,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set((s) => {
       // 화면이 이미 막고 있지만 게스트의 원격 호출도 여기로 들어오므로 규칙 검사는 스토어가 최종이다.
       if (!isRosterLegal(s.draftPicks.p1, s.rosterRule) || !isRosterLegal(s.draftPicks.p2, s.rosterRule)) return {};
+      // 배치 슬롯 수는 **편성 규칙이 정한 인원**이다 — 여기서 상수 5를 쓰면 6대6 규칙에서
+      // 여섯 번째 기물이 놓을 자리를 못 받아 영영 미배치로 남는다.
+      const size = rosterSizeOf(s.rosterRule);
       const positions: Record<Owner, (Position | null)[]> = {
-        p1: Array(ROSTER_SIZE).fill(null),
-        p2: Array(ROSTER_SIZE).fill(null),
+        p1: Array(size).fill(null),
+        p2: Array(size).fill(null),
       };
       if (s.mode === 'ai') {
         // AI는 배치도 스스로 끝낸다 — 사람은 자기 진영만 찍으면 된다.

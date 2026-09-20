@@ -32,7 +32,7 @@ import { staticRunLimit } from '../engine/movePath';
 // 동전은 해결 단계에서 굴러가므로 계획 시점에는 결과를 알 수 없다 — AI도 앞면 기준(최대치)으로 본다.
 import { plannedAttackPower, plannedMoveSpeed, plannedAttackShape } from '../engine/unitStats';
 import type { RngFn } from '../engine/rng';
-import { CAPTURE_MARGIN, ROSTER_SIZE } from '../data/constants';
+import { CAPTURE_MARGIN } from '../data/constants';
 import { DIFFICULTY_PROFILES, type AiDifficulty, type DifficultyProfile } from './difficulty';
 
 export type { AiDifficulty } from './difficulty';
@@ -728,6 +728,21 @@ const DRAFT_PRESETS: Record<RosterRuleId, Record<AiDifficulty, string[]>> = {
      */
     hard: ['tank2', 'dealer4', 'dealer2', 'dealer3', 'support1'],
   },
+  /**
+   * 6대6 · 역할 균형. 역할 수가 2:2:2로 고정돼 있으니 조합의 자유도는 "각 역할에서 **어느 둘**을
+   * 고르는가"뿐이다. 그래서 역할 안에서 서로를 메우는 짝을 골랐다.
+   */
+  sixRoles: {
+    easy: [],
+    // 보통: 버티는 탱커 + 방벽, 안정적인 원거리 화력 둘, 광역·단일 회복 하나씩.
+    normal: ['tank1', 'tank3', 'dealer1', 'dealer4', 'support1', 'support2'],
+    /**
+     * 어려움: 돌진(tank2)으로 전선을 만들고 방벽(tank3)이 그 뒤를 잠근다. 화력은 밸런스 측정에서
+     * 상위권이던 측면 교란형·시간 역행형이고, 회복은 광역(support1)과 조준 보조를 겸하는
+     * support2를 붙여 "회복할 아군이 없는 턴"을 버프로 돌린다(PROGRESS 지원2 항목).
+     */
+    hard: ['tank2', 'tank3', 'dealer4', 'dealer2', 'support1', 'support2'],
+  },
 };
 
 export function aiDraftPicks(
@@ -735,8 +750,11 @@ export function aiDraftPicks(
   rngFn: RngFn = Math.random,
   ruleId: RosterRuleId = DEFAULT_ROSTER_RULE,
 ): string[] {
-  const preset = DRAFT_PRESETS[rosterRuleOf(ruleId).id][difficulty];
-  if (preset.length === ROSTER_SIZE) return [...preset];
+  const rule = rosterRuleOf(ruleId);
+  const preset = DRAFT_PRESETS[rule.id][difficulty];
+  // 표가 규칙의 인원수와 맞을 때만 쓴다 — 길이가 어긋난 표를 그대로 내면 사람은 6기를 고르는데
+  // AI만 5기로 싸우는 판이 된다. 어긋나면 규칙을 지키는 추첨으로 떨어진다.
+  if (preset.length === rule.size) return [...preset];
   // 쉬움은 무작위 편성이다 — 규칙을 지키는 추첨은 편성 규칙 쪽이 유일한 근거다.
   return randomRoster(rngFn, ruleId);
 }

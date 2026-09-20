@@ -8,7 +8,8 @@
  * 방법: 양쪽 모두 같은 난이도의 AI가 무작위 5기물 편성으로 붙는다. 편성이 무작위이므로
  * 특정 기물이 "들어간 판의 승률"이 그 기물의 실제 값어치에 대한 추정치가 된다(팀 단위 기여도).
  *
- * 실행: npx vite-node scripts/balanceSim.ts [게임수] [난이도] [최대턴] [탱커수] [맵] [기준맵] [--기준편성=free|N]
+ * 실행: npx vite-node scripts/balanceSim.ts [게임수] [난이도] [최대턴] [편성] [맵] [기준맵] [--기준편성=…]
+ *   편성 = free | oneTank | sixRoles (게임의 편성 규칙 그대로) 또는 0~5 (탱커 수만 강제)
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createInitialState } from '../src/engine/createInitialState';
@@ -18,7 +19,14 @@ import { seededRng } from '../src/engine/rng';
 import { unitTypes } from '../src/data/unitTypes';
 // 추첨은 게임의 편성 규칙과 **같은 함수**를 쓴다 — 시뮬레이터가 따로 뽑으면 여기서 잰 숫자가
 // 실제 대전에서 벌어지는 일과 조용히 갈라진다.
-import { randomRosterWithQuota } from '../src/data/rosterRules';
+import {
+  ROSTER_RULES,
+  ROSTER_RULE_ORDER,
+  randomRoster as randomRosterByRule,
+  randomRosterWithQuota,
+  rosterSizeOf,
+  type RosterRuleId,
+} from '../src/data/rosterRules';
 import { WIN_SCORE } from '../src/data/constants';
 import { validateMap } from '../src/maps/mapModel';
 import { loadBoard, renderBoard } from './loadMap';
@@ -42,20 +50,40 @@ const DIFFICULTY = (POSITIONAL[1] ?? 'hard') as AiDifficulty;
  */
 const MAX_TURNS = Number(POSITIONAL[2] ?? 80);
 /**
- * 편성에 넣을 탱커 수를 강제한다. `free`(기본)면 제약 없이 10종에서 균등 추첨 — 이때 탱커는
- * 이항분포로 0~5명이 섞이고 기대값이 1.5명이다.
+ * 어떤 편성 조건으로 잴 것인가. 두 종류를 받는다:
  *
- * 왜 인자로 두는가: "탱커 1명만"은 스탯 조정이 아니라 **편성 규칙** 변경이라, 기물 값어치의
- * 순위 자체를 바꿀 수 있다. 예컨대 방벽·제어형은 다른 탱커가 앞에서 맞아 주는 걸 전제로 한
- * 기물인데, 그 전제가 사라지면 같은 스탯이어도 다른 기물이 된다. 스탯을 건드리지 않고 규칙만
- * 바꿔서 재는 게 목적이므로 유닛 데이터가 아니라 시뮬레이터 인자로 뺀다.
+ * - **게임에 실제로 있는 편성 규칙 id**(`free` · `oneTank` · `sixRoles`) — 화면에서 고를 수 있는
+ *   조건 그대로 잰다. 추첨도 `randomRoster()`를 그대로 불러 쓰므로 여기서 나온 숫자가 실제
+ *   대전에서 벌어지는 일과 갈라지지 않는다.
+ * - **숫자**(0~5) — 탱커 수만 그 값으로 강제하는 5기물 편성. 게임에 없는 조건(0·2·3)도 재야
+ *   "탱커 수에 따라 이 기물이 어떻게 변하는가"라는 곡선이 나오기 때문에 남겨 둔다.
  *
- * 이 중 `1`은 게임의 **'탱커 1명 고정' 편성 규칙**과 같은 조건이다(src/data/rosterRules.ts) —
- * 추첨 자체도 그 파일 함수를 그대로 쓴다. 여기서 잰 숫자가 실제 대전에서 벌어지는 일과 달라지면
- * 측정할 값어치가 없기 때문이다. 여전히 인자인 이유는 0·2·3처럼 게임에 없는 조건도 재야
- * "탱커 수에 따라 이 기물이 어떻게 변하는가"라는 곡선이 나오기 때문이다.
+ * 왜 인자로 두는가: 편성 규칙은 스탯 조정이 아니라 **규칙 변경**이라 기물 값어치의 순위 자체를
+ * 바꾼다. 방벽·제어형은 다른 탱커가 앞에서 맞아 주는 걸 전제로 한 기물인데, 그 전제가 사라지면
+ * 같은 스탯이어도 다른 기물이 된다. 스탯을 건드리지 않고 규칙만 바꿔서 재는 게 목적이므로
+ * 유닛 데이터가 아니라 시뮬레이터 인자로 뺀다.
+ *
+ * `free`와 `1`은 각각 `free` 규칙·`oneTank` 규칙과 **완전히 같은 조건**이라 기록도 같은 키에
+ * 쌓인다(아래 `ruleLabel` 참고). 인자를 넓히면서 예전 기준선이 끊기면 안 되기 때문이다.
+ *
+ * 6대6은 인원수까지 6으로 바뀌므로 숫자 인자로는 표현할 수 없다 — 규칙 id를 받는 이유다.
  */
-const TANK_QUOTA = POSITIONAL[3] === undefined || POSITIONAL[3] === 'free' ? null : Number(POSITIONAL[3]);
+type RosterSetting = { kind: 'rule'; id: RosterRuleId } | { kind: 'tankQuota'; tanks: number };
+
+function parseRosterSetting(arg: string | undefined): RosterSetting {
+  if (arg === undefined) return { kind: 'rule', id: 'free' };
+  if (arg in ROSTER_RULES) return { kind: 'rule', id: arg as RosterRuleId };
+  const n = Number(arg);
+  if (!Number.isInteger(n) || n < 0) {
+    console.error(
+      `\n편성 인자 '${arg}'를 모르겠습니다. 규칙 id(${ROSTER_RULE_ORDER.join(' · ')}) 또는 탱커 수(0~5)를 주세요.`,
+    );
+    process.exit(1);
+  }
+  return { kind: 'tankQuota', tanks: n };
+}
+
+const ROSTER = parseRosterSetting(POSITIONAL[3]);
 /**
  * 잴 맵. 기본은 '정원'(기본 맵)이다.
  *
@@ -75,7 +103,8 @@ const MAP_ARG = POSITIONAL[4] ?? 'garden';
  */
 const BASE_MAP_ARG = POSITIONAL[5];
 /**
- * 증감을 **다른 편성 규칙**의 기록과 비교한다. `--기준편성=free`처럼 준다.
+ * 증감을 **다른 편성 조건**의 기록과 비교한다. 위치 인자와 같은 값을 받는다(`--기준편성=free`,
+ * `--기준편성=sixRoles`, `--기준편성=2`).
  *
  * BASE_MAP_ARG과 같은 이유로 필요하다. "탱커 1명 제한이 누구에게 유리한가"는 탱커 1명끼리 두 번
  * 돌려서는 알 수 없고 자유 편성과 견줘야 나온다 — 그런데 기록은 편성 규칙별로 나뉘어 저장되므로
@@ -110,7 +139,9 @@ const stats = new Map<string, Stat>();
 const blank = (): Stat => ({ games: 0, wins: 0, draws: 0, damage: 0, kills: 0, deaths: 0, healing: 0, zoneTurns: 0 });
 for (const t of unitTypes) stats.set(t.id, blank());
 
-const randomRoster = (rng: () => number) => randomRosterWithQuota(rng, TANK_QUOTA);
+// 규칙 id면 게임과 **같은 추첨 함수**를 그대로 부른다. 탱커 수 인자일 때만 5기물 경로로 간다.
+const randomRoster = (rng: () => number) =>
+  ROSTER.kind === 'rule' ? randomRosterByRule(rng, ROSTER.id) : randomRosterWithQuota(rng, ROSTER.tanks);
 
 let p1Wins = 0;
 let p2Wins = 0;
@@ -118,6 +149,14 @@ let draws = 0;
 let totalTurns = 0;
 let turretSpawns = 0;
 let turretHeal = 0;
+/**
+ * 러너는 피해도 회복도 0이라 위 표의 어느 칸에도 성과가 남지 않는다 — 승점률만 보면 왜 낮은지
+ * 원인을 고를 수 없다("기술을 안 쓴다"와 "써도 효과가 없다"는 처방이 정반대다). 그래서 차단막을
+ * 몇 번 쳤고 그게 실제로 몇 건을 지웠는지를 따로 센다.
+ */
+let veilCasts = 0;
+let veilErased = 0;
+let paceCasts = 0;
 const drawScores: number[] = [];
 
 for (let game = 0; game < GAMES; game++) {
@@ -151,6 +190,9 @@ for (let game = 0; game < GAMES; game++) {
       // 포탑은 판 도중에 생기는 별도 엔티티라 typeOf에 없다. 소환한 support3의 성과이므로 따로 센다.
       else if (e.type === 'turretSpawn') turretSpawns += 1;
       else if (e.type === 'turretAura') turretHeal += Number(e.detail?.amount ?? 0);
+      else if (e.type === 'veil') veilCasts += 1;
+      else if (e.type === 'blockedByVeil') veilErased += 1;
+      else if (e.type === 'skill' && e.detail?.skillId === 'support4_pace') paceCasts += 1;
     }
     // 점령지 체류는 로그가 아니라 판 상태에서 직접 센다 — 점수의 원천이므로 별도 지표로 둘 값어치가 있다.
     const zone = new Set(state.board.captureZone.map((c) => `${c.x},${c.y}`));
@@ -206,20 +248,31 @@ const rows = [...stats.entries()]
   .sort((a, b) => b.points - a.points);
 
 /**
- * 편성 규칙의 표시 이름. 기록 키에도 그대로 쓰이므로 이 함수가 유일한 근거여야 한다.
+ * 편성 조건의 표시 이름. 기록 키에도 그대로 쓰이므로 이 함수가 유일한 근거여야 한다.
  *
- * 0·2·3처럼 게임에 없는 할당량도 재므로 게임 쪽 이름표(rosterRules.ts)를 그대로 쓸 수는 없다.
- * 다만 겹치는 두 값(`null`·`1`)은 **글자까지 같아야 한다** — 여기 쌓인 기록의 키가 곧 그 문자열이라,
- * 이름을 바꾸면 예전 기준선과 이어지지 않고 증감 칸이 통째로 비어 버린다.
+ * 규칙 id는 `rosterRules.ts`의 이름표를 그대로 쓴다 — 표에 적힌 이름과 화면에 뜨는 이름이 갈리면
+ * 어느 조건을 잰 표인지 알 수 없게 된다. 0·2·3처럼 게임에 없는 할당량은 그 이름표가 없으므로
+ * 여기서 만든다.
+ *
+ * 겹치는 두 조건(`free`·`1`)의 문자열이 게임 쪽 이름표와 **글자까지 같아야 한다** — 여기 쌓인
+ * 기록의 키가 곧 그 문자열이라, 이름이 어긋나면 예전 기준선과 이어지지 않고 증감 칸이 통째로
+ * 비어 버린다. 마침 `ROSTER_RULES.free.label === '자유 편성'`,
+ * `ROSTER_RULES.oneTank.label === '탱커 1명 고정'`이라 `탱커 N명 고정` 규칙과 자연히 맞물린다.
  */
-const ruleLabel = (quota: number | null) => (quota === null ? '자유 편성' : `탱커 ${quota}명 고정`);
-const rule = ruleLabel(TANK_QUOTA);
-const baseRule = BASE_RULE_ARG === undefined ? rule : ruleLabel(BASE_RULE_ARG === 'free' ? null : Number(BASE_RULE_ARG));
+const ruleLabel = (setting: RosterSetting) =>
+  setting.kind === 'rule' ? ROSTER_RULES[setting.id].label : `탱커 ${setting.tanks}명 고정`;
+const rule = ruleLabel(ROSTER);
+const baseRule = BASE_RULE_ARG === undefined ? rule : ruleLabel(parseRosterSetting(BASE_RULE_ARG));
 const isGarden = MAP_ARG === 'garden';
 const baseSnapshot = readAll()[keyForMap(BASE_MAP_ARG ?? MAP_ARG, baseRule)] ?? null;
 const prev = baseSnapshot?.points;
 
-console.log(`\n=== ${GAMES}판 · 난이도 ${DIFFICULTY} · 최대 ${MAX_TURNS}턴 · ${rule} · 맵 ${mapName} ===`);
+// 인원수를 머리말에 박는다 — 6대6은 같은 맵에 24기가 서므로 점령지 앞이 붐비는 정도가 달라진다.
+// 표만 보면 왜 판당피해가 통째로 커졌는지 알 수 없어서, 조건이 몇 기물인지가 보여야 한다.
+const rosterSize = ROSTER.kind === 'rule' ? rosterSizeOf(ROSTER.id) : 5;
+console.log(
+  `\n=== ${GAMES}판 · 난이도 ${DIFFICULTY} · 최대 ${MAX_TURNS}턴 · ${rule}(팀당 ${rosterSize}기) · 맵 ${mapName} ===`,
+);
 if (!isGarden) console.log(renderBoard(board));
 console.log(`p1 ${p1Wins}승 / p2 ${p2Wins}승 / 무승부 ${draws} · 평균 ${(totalTurns / GAMES).toFixed(1)}턴`);
 if (baseSnapshot) {
@@ -249,7 +302,9 @@ rows.forEach((r, i) => {
 const spread = rows[0].points - rows[rows.length - 1].points;
 const prevSpread = prev ? Math.max(...Object.values(prev)) - Math.min(...Object.values(prev)) : null;
 console.log(
-  `\n전체편차(1위−10위) ${spread.toFixed(1)}%p` +
+  // 기물 수를 문장에 박으면 기물을 하나 늘릴 때 이 한 줄만 조용히 낡는다(실제로 "1위−10위"인 채
+  // 12종을 재고 있었다). rows에서 뽑는다.
+  `\n전체편차(1위−${rows.length}위) ${spread.toFixed(1)}%p` +
     (prevSpread === null ? '' : ` · 직전 ${prevSpread.toFixed(1)}%p → ${(spread - prevSpread >= 0 ? '+' : '') + (spread - prevSpread).toFixed(1)}%p`),
 );
 saveSnapshot();
@@ -304,5 +359,16 @@ if (drawScores.length > 0) {
     `\n포탑: 생성 ${turretSpawns}회 · 회복 총 ${turretHeal} · ` +
       `생성당 ${perSpawn.toFixed(1)} · 확률·포탑형 편성판당 ${perSupport3Game.toFixed(1)}`,
   );
+}
+// 차단막은 "친 횟수"와 "지운 건수"가 따로 놀 수 있다 — 많이 치는데 지운 게 없으면 AI가 허공에
+// 치는 것이고, 지운 게 많은데 승점률이 낮으면 지운 대상이 값싼 것들이라는 뜻이다.
+{
+  const support4Games = rows.find((r) => r.id === 'support4')?.games ?? 0;
+  if (support4Games > 0) {
+    console.log(
+      `\n러너: 차단막 ${veilCasts}회 · 지운 판정 ${veilErased}건(시전당 ${(veilErased / (veilCasts || 1)).toFixed(2)}) · ` +
+        `발맞추기 ${paceCasts}회 · 러너 편성판당 차단막 ${(veilCasts / support4Games).toFixed(1)}회`,
+    );
+  }
 }
 console.log();

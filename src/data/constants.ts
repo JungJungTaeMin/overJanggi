@@ -39,6 +39,11 @@ export const WIN_SCORE = 15;
 export const RESPAWN_TURNS = 3;
 /** 최대 체력 = 체력 Lv × HP_MULTIPLIER (기획서 v0.3 6장) */
 export const HP_MULTIPLIER = 5;
+/**
+ * 기본 편성 인원. **이 값을 인원수의 유일한 근거로 삼으면 안 된다** — 편성 규칙마다 인원이 다르고
+ * (6대6 · 역할 균형은 6기다), 실제 인원은 `rosterSizeOf(rosterRule)`이 정한다. 여기 남아 있는 건
+ * 자유 편성·탱커 1명 고정의 값이자 밸런스 시뮬레이터의 기본값으로서다.
+ */
 export const ROSTER_SIZE = 5;
 /** dealer2 '시간 역행' 기술 id — 엔진(복귀 처리)과 UI(사용량 표시) 여러 곳에서 참조한다. */
 export const REWIND_SKILL_ID = 'dealer2_rewind_move';

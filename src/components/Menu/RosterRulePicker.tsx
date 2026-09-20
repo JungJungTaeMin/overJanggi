@@ -14,7 +14,7 @@ export function RosterRulePicker() {
   return (
     <section className="mode-card">
       <h2>편성 규칙</h2>
-      <p>드래프트에서 5기물을 어떻게 고를 수 있는지 정합니다. 기물 스탯은 규칙과 무관하게 같습니다.</p>
+      <p>드래프트에서 몇 기물을 어떻게 고를 수 있는지 정합니다. 기물 스탯은 규칙과 무관하게 같습니다.</p>
       <div className="rule-choice-row">
         {ROSTER_RULE_ORDER.map((id) => {
           const rule = ROSTER_RULES[id];

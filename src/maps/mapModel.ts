@@ -1,5 +1,6 @@
 import type { BoardConfig, Position } from '../engine/types';
-import { HEAL_PACK_AMOUNTS, ROSTER_SIZE } from '../data/constants';
+import { HEAL_PACK_AMOUNTS } from '../data/constants';
+import { MAX_ROSTER_SIZE } from '../data/rosterRules';
 import { key } from '../engine/grid';
 
 /**
@@ -21,15 +22,46 @@ export interface TilePalette {
   hint: string;
 }
 
+/**
+ * **판 바닥 색의 유일한 출처.**
+ *
+ * 예전에는 같은 색이 두 군데 적혀 있었다 — 판을 그리는 Board.tsx의 `cellFill`과 맵 메이커
+ * 팔레트. 색을 한 번 바꾸면 다른 쪽은 조용히 옛 색으로 남아, 메이커에서 찍은 맵과 실제로
+ * 플레이하는 맵의 색이 달라졌다(미리보기가 미리보기가 아니게 된다). 이제 둘 다 여기를 읽는다.
+ *
+ * 값이 전부 어두운 이유는 판 위에 올라가는 것들 때문이다. 기물·체력바·피해 숫자·사거리 강조가
+ * 전부 바닥 위에 얹히는데, 바닥이 밝으면 그 위에 올릴 수 있는 색은 어두운 색뿐이라 팀색(파랑·빨강)이
+ * 서로 비슷해 보인다. 바닥을 어둡게 깔면 밝은 색을 다 쓸 수 있어 무엇이 무엇인지가 색만으로 갈린다.
+ */
+export const TERRAIN_COLORS = {
+  /**
+   * 빈 바닥. 두 톤을 번갈아 칠해 격자선 없이도 칸이 세어진다(체스판과 같은 이유).
+   *
+   * **중립 회색이어야 한다.** 처음엔 판 전체를 푸른 회색으로 깔았는데, 그러자 P1 진영(파랑)이
+   * 바닥과 같은 색조라 시작지점이 어디까지인지 안 보였다 — 부활 지점이 안 보이는 판이 된다.
+   * 바닥에서 색조를 빼야 진영색 두 개가 둘 다 "칠해진 곳"으로 읽힌다.
+   */
+  floor: '#1c2130',
+  floorAlt: '#171c29',
+  /** 벽은 **바닥이 아니라 구멍**으로 읽혀야 한다 — 가장 어두운 값을 준다. */
+  wall: '#05080f',
+  /** 점령지는 판에서 유일하게 따뜻한 색이다. 눈이 목적지를 먼저 찾게 만든다. */
+  capture: '#4a3915',
+  startA: '#1a3557',
+  startB: '#4a2029',
+  heal10: '#17402f',
+  heal20: '#1c6244',
+} as const;
+
 /** 팔레트 순서 = 화면에 뜨는 순서. 사용자가 요청한 블록 종류가 이 목록의 전부다. */
 export const TILE_PALETTE: TilePalette[] = [
-  { kind: 'startA', label: '진영 블럭 A', color: '#dbeafe', hint: 'Player 1의 시작지점 · 부활 지점' },
-  { kind: 'startB', label: '진영 블럭 B', color: '#fee2e2', hint: 'Player 2의 시작지점 · 부활 지점' },
-  { kind: 'wall', label: '벽 블럭', color: '#374151', hint: '이동·직선 공격을 모두 막는다' },
-  { kind: 'capture', label: '점령 블럭', color: '#fde68a', hint: '이 칸 위의 인원수로 점수를 낸다' },
-  { kind: 'heal10', label: '힐팩 10', color: '#bbf7d0', hint: '밟으면 10 회복 · 3턴 뒤 재생성' },
-  { kind: 'heal20', label: '힐팩 20', color: '#4ade80', hint: '밟으면 20 회복 · 3턴 뒤 재생성' },
-  { kind: 'empty', label: '지우개', color: '#f8fafc', hint: '빈 칸으로 되돌린다' },
+  { kind: 'startA', label: '진영 블럭 A', color: TERRAIN_COLORS.startA, hint: 'Player 1의 시작지점 · 부활 지점' },
+  { kind: 'startB', label: '진영 블럭 B', color: TERRAIN_COLORS.startB, hint: 'Player 2의 시작지점 · 부활 지점' },
+  { kind: 'wall', label: '벽 블럭', color: TERRAIN_COLORS.wall, hint: '이동·직선 공격을 모두 막는다' },
+  { kind: 'capture', label: '점령 블럭', color: TERRAIN_COLORS.capture, hint: '이 칸 위의 인원수로 점수를 낸다' },
+  { kind: 'heal10', label: '힐팩 10', color: TERRAIN_COLORS.heal10, hint: '밟으면 10 회복 · 3턴 뒤 재생성' },
+  { kind: 'heal20', label: '힐팩 20', color: TERRAIN_COLORS.heal20, hint: '밟으면 20 회복 · 3턴 뒤 재생성' },
+  { kind: 'empty', label: '지우개', color: TERRAIN_COLORS.floor, hint: '빈 칸으로 되돌린다' },
 ];
 
 export const MIN_MAP_SIZE = 7;
@@ -146,11 +178,13 @@ function floodFill(board: BoardConfig, from: Position[]): Set<string> {
  */
 export function validateMap(board: BoardConfig): string[] {
   const errors: string[] = [];
-  if (board.startZones.p1.length < ROSTER_SIZE) {
-    errors.push(`진영 블럭 A가 ${board.startZones.p1.length}칸입니다 — 기물 ${ROSTER_SIZE}개를 배치하려면 최소 ${ROSTER_SIZE}칸이 필요합니다.`);
+  // 기준은 **가장 큰 편성 규칙**(6대6)이다. 5칸짜리 진영을 통과시키면 그 맵은 자유 편성에서만
+  // 쓸 수 있고, 6대6을 고른 사람은 여섯 번째 기물을 놓을 자리가 없는 채로 배치 화면에 갇힌다.
+  if (board.startZones.p1.length < MAX_ROSTER_SIZE) {
+    errors.push(`진영 블럭 A가 ${board.startZones.p1.length}칸입니다 — 기물 ${MAX_ROSTER_SIZE}개를 배치하려면 최소 ${MAX_ROSTER_SIZE}칸이 필요합니다.`);
   }
-  if (board.startZones.p2.length < ROSTER_SIZE) {
-    errors.push(`진영 블럭 B가 ${board.startZones.p2.length}칸입니다 — 최소 ${ROSTER_SIZE}칸이 필요합니다.`);
+  if (board.startZones.p2.length < MAX_ROSTER_SIZE) {
+    errors.push(`진영 블럭 B가 ${board.startZones.p2.length}칸입니다 — 최소 ${MAX_ROSTER_SIZE}칸이 필요합니다.`);
   }
   if (board.captureZone.length === 0) {
     errors.push('점령 블럭이 없습니다 — 점수를 낼 방법이 없어 판이 끝나지 않습니다.');

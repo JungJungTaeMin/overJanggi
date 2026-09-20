@@ -25,7 +25,11 @@ function OwnerSlotList({ owner, label, active, onSelect }: { owner: Owner; label
           const isActive = active !== null && active.owner === owner && active.index === i;
           return (
             <li key={i}>
-              <button onClick={() => onSelect({ owner, index: i })} style={{ background: isActive ? '#fef9c3' : undefined }}>
+              {/* 「지금 놓는 중인 슬롯」 표시는 예전에 인라인 `background: '#fef9c3'`(연노랑)이었다.
+                  판을 어둡게 바꾸면서 글자색이 밝아지자 연노랑 바탕 위의 밝은 글자가 통째로
+                  사라졌다 — 하필 지금 무엇을 놓는 중인지 알려 주는 유일한 표시가. 색을 손으로
+                  적지 말고 다른 화면의 선택 표시(.unit-row.selected)와 같은 토큰을 쓴다. */}
+              <button className={isActive ? 'slot-btn active' : 'slot-btn'} onClick={() => onSelect({ owner, index: i })}>
                 {getUnitType(typeId).name} — {placed ? `(${placed.x}, ${placed.y})` : '미배치'}
               </button>
             </li>
