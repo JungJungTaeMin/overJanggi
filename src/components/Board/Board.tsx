@@ -2,16 +2,17 @@ import { useMemo, type CSSProperties } from 'react';
 import type { BoardConfig, Position, UnitInstance } from '../../engine/types';
 import { healPackAt, isInCaptureZone, isObstacle, samePosition } from '../../engine/grid';
 import type { PreviewStep } from '../Planning/actionGeometry';
-import { UnitToken } from './UnitToken';
+import { OWNER_COLOR, UnitToken } from './UnitToken';
 import { flankBonusFor } from '../../engine/flankBonus';
 import { boardView } from './orientation';
 import type { BoardMark, BoardRay, MarkKind, RayKind } from './resolutionMarkers';
 import type { AimMark } from '../Planning/aimPreview';
+import { TERRAIN_COLORS } from '../../maps/mapModel';
 
 export const CELL_SIZE = 42;
 
 /** 시간 역행(추가 이동) 구간을 일반 이동과 구분하는 색 — 기준점 표시에도 같은 색을 쓴다. */
-export const REWIND_COLOR = '#7c3aed';
+export const REWIND_COLOR = '#a78bfa';
 
 export interface PreviewMove {
   unit: UnitInstance;
@@ -27,8 +28,23 @@ export interface RewindAnchor {
   hp: number;
 }
 
+/**
+ * 사거리 강조 색. 어두운 바닥 위에서는 **밝기가 곧 강조**다 — 보장되는 칸은 밝게, 동전이
+ * 앞면이어야만 닿는 칸(확률·포탑형)은 같은 색조를 어둡게 둔다. 다른 색을 주면 새로운 뜻으로
+ * 읽히지만 실제로는 "같은 이동 칸인데 보장이 안 될 뿐"이다.
+ *
+ * 상수로 뺀 이유는 테스트가 이 값을 확인하기 때문이다. 테스트에 색을 베껴 적어 두면 색을 한 번
+ * 바꿀 때마다 멀쩡한 테스트가 깨져, 색을 고치는 일이 테스트를 고치는 일이 된다.
+ */
+export const HIGHLIGHT_COLORS = {
+  move: '#2f7a54',
+  moveLucky: '#1f4536',
+  attack: '#9a5324',
+  attackLucky: '#4a3222',
+} as const;
+
 /** 힐팩 색 — 맵 메이커 팔레트(mapModel.TILE_PALETTE)와 반드시 같은 값이어야 미리보기가 실제와 같다. */
-export const HEAL_PACK_COLOR: Record<number, string> = { 10: '#bbf7d0', 20: '#4ade80' };
+export const HEAL_PACK_COLOR: Record<number, string> = { 10: TERRAIN_COLORS.heal10, 20: TERRAIN_COLORS.heal20 };
 
 interface Props {
   board: BoardConfig;
@@ -46,6 +62,11 @@ interface Props {
    * 그래서 칸을 칠하지 않고 테두리만 그려 클릭 가능한 칸과 헷갈리지 않게 한다.
    */
   healCells?: Position[];
+  /**
+   * 차단막(러너)이 지금 덮고 있는 칸. **판에 그리지 않으면 존재를 알 수 없는 효과**라 반드시
+   * 보여야 한다 — 조준 미리보기는 조준할 때만 뜨고, 그때는 이미 각을 다 잡은 뒤다.
+   */
+  veilCells?: Position[];
   /**
    * 이동 칸과 공격 칸이 **겹치는 칸**을 클릭했을 때 무엇으로 해석하는지.
    * 색·툴팁이 이 우선순위를 그대로 따라야 "클릭하면 무슨 일이 일어나는가"가 보드만 보고 읽힌다.
@@ -80,31 +101,38 @@ interface Props {
   aimMarks?: AimMark[];
 }
 
-/** 표시 색 — 판의 다른 강조색(초록=이동, 주황=공격 사거리)과 겹치지 않게 고른 값들. */
+/**
+ * 표시 색 — 판의 다른 강조색(초록=이동, 주황=공격 사거리)과 겹치지 않게 고른 값들.
+ * 어두운 판으로 바꾸면서 **채도가 아니라 밝기를 올렸다**: 진한 색은 어두운 바닥 위에서 서로
+ * 비슷해 보여, 「-8」과 「+3」이 색만으로는 안 갈린다. 「격추」만 예외로 어둡게 두는데,
+ * 그건 유일하게 **없어지는 사건**이라 다른 표시와 반대 방향으로 튀어야 눈에 걸린다.
+ */
 const MARK_STYLE: Record<MarkKind, { fill: string; text: string }> = {
-  damage: { fill: '#dc2626', text: '#ffffff' },
-  heal: { fill: '#15803d', text: '#ffffff' },
-  blocked: { fill: '#0ea5e9', text: '#ffffff' },
-  miss: { fill: '#94a3b8', text: '#ffffff' },
-  death: { fill: '#1f2937', text: '#ffffff' },
-  respawn: { fill: '#7c3aed', text: '#ffffff' },
+  damage: { fill: '#ef4444', text: '#ffffff' },
+  heal: { fill: '#22c55e', text: '#05140b' },
+  blocked: { fill: '#38bdf8', text: '#04202e' },
+  miss: { fill: '#64748b', text: '#ffffff' },
+  death: { fill: '#0b1220', text: '#ff9d9d' },
+  respawn: { fill: '#a78bfa', text: '#1a1030' },
 };
 
 const RAY_STYLE: Record<RayKind, { stroke: string; dash?: string }> = {
-  hit: { stroke: '#dc2626' },
-  blocked: { stroke: '#0ea5e9', dash: '5 3' },
-  heal: { stroke: '#15803d', dash: '2 3' },
+  hit: { stroke: '#ef4444' },
+  blocked: { stroke: '#38bdf8', dash: '5 3' },
+  heal: { stroke: '#22c55e', dash: '2 3' },
 };
 
 function cellFill(p: Position, board: BoardConfig): string {
-  if (isObstacle(p, board)) return '#374151';
-  if (isInCaptureZone(p, board)) return '#fde68a';
+  if (isObstacle(p, board)) return TERRAIN_COLORS.wall;
+  if (isInCaptureZone(p, board)) return TERRAIN_COLORS.capture;
   // 힐팩은 시작지점 안에도 놓을 수 있으므로 진영 색보다 먼저 본다 — 진영 색에 덮이면 안 보인다.
   const pack = healPackAt(p, board);
-  if (pack) return HEAL_PACK_COLOR[pack.amount] ?? '#bbf7d0';
-  if (board.startZones.p1.some((s) => samePosition(s, p))) return '#dbeafe';
-  if (board.startZones.p2.some((s) => samePosition(s, p))) return '#fee2e2';
-  return '#f8fafc';
+  if (pack) return HEAL_PACK_COLOR[pack.amount] ?? TERRAIN_COLORS.heal10;
+  if (board.startZones.p1.some((s) => samePosition(s, p))) return TERRAIN_COLORS.startA;
+  if (board.startZones.p2.some((s) => samePosition(s, p))) return TERRAIN_COLORS.startB;
+  // 빈 바닥만 두 톤을 번갈아 칠한다. 격자선을 진하게 긋는 대신 칸 자체의 밝기로 나누면
+  // 판에 선이 하나도 늘지 않으면서 "몇 칸 떨어졌나"를 눈으로 셀 수 있다.
+  return (p.x + p.y) % 2 === 0 ? TERRAIN_COLORS.floor : TERRAIN_COLORS.floorAlt;
 }
 
 function toSet(cells: Position[]): Set<string> {
@@ -113,17 +141,18 @@ function toSet(cells: Position[]): Set<string> {
 
 /** 조준 미리보기 색 — 맞는다=공격색(주황), 방벽=재생 중 「막힘」과 같은 하늘색, 아군 차단=회색. */
 const AIM_STYLE: Record<AimMark['kind'], { stroke: string; dash?: string; label: string }> = {
-  hit: { stroke: '#ea580c', label: '이 방향으로 쏘면 맞습니다' },
+  hit: { stroke: '#fb923c', label: '이 방향으로 쏘면 맞습니다' },
   ally: { stroke: '#94a3b8', dash: '3 2', label: '아군이 사선을 막고 있습니다 — 비키면 닿습니다' },
-  barrier: { stroke: '#0ea5e9', dash: '3 2', label: '방벽에 막혀 피해가 들어가지 않습니다' },
+  barrier: { stroke: '#38bdf8', dash: '3 2', label: '방벽에 막혀 피해가 들어가지 않습니다' },
+  veil: { stroke: '#c084fc', dash: '3 2', label: '차단막이 덮은 칸이라 공격이 지워집니다' },
 };
 
 /**
  * 한 칸에 여러 방향의 조준 결과가 겹칠 수 있다(범위 공격, 대각·직선을 함께 쏘는 기물).
  * 겹치면 **가장 유리한 것 하나만** 남긴다 — 같은 칸에 표식을 두 번 겹쳐 그리면 굵기만 늘어나
- * 무슨 뜻인지 되레 안 읽힌다. 우선순위는 hit > barrier > ally: 때릴 수 있다는 사실이 먼저다.
+ * 무슨 뜻인지 되레 안 읽힌다. 우선순위는 hit > barrier > veil > ally: 때릴 수 있다는 사실이 먼저다.
  */
-const AIM_RANK: Record<AimMark['kind'], number> = { hit: 2, barrier: 1, ally: 0 };
+const AIM_RANK: Record<AimMark['kind'], number> = { hit: 3, barrier: 2, veil: 1, ally: 0 };
 
 function dedupeAimMarks(marks: AimMark[]): AimMark[] {
   const best = new Map<string, AimMark>();
@@ -149,6 +178,7 @@ export function Board({
   moveCells = [],
   attackCells = [],
   healCells = [],
+  veilCells = [],
   clickPriority = 'move',
   luckyCells = [],
   clickableCells = [],
@@ -205,6 +235,12 @@ export function Board({
       width={board.width * CELL_SIZE}
       height={board.height * CELL_SIZE}
     >
+      <defs>
+        {/* 기물을 바닥에서 띄우는 그림자. 판마다 한 번만 정의하고 모든 기물이 참조한다. */}
+        <filter id="token-lift" x="-50%" y="-50%" width="200%" height="200%">
+          <feDropShadow dx="0" dy="1" stdDeviation="1.1" floodColor="#000" floodOpacity="0.6" />
+        </filter>
+      </defs>
       {cells.map((p) => {
         const key = `${p.x},${p.y}`;
         const clickable = clickableSet.has(key);
@@ -216,8 +252,8 @@ export function Board({
         let fill = cellFill(p, board);
         // 이동/공격 칸이 겹치면 클릭 처리(handleCellClick)가 지금 모드 쪽을 먼저 보므로 색도 같이 맞춘다.
         const attackFirst = clickPriority === 'attack';
-        const moveFill = isLucky ? '#e8f8ee' : '#bbf7d0';
-        const attackFill = isLucky ? '#fdeee0' : '#fed7aa';
+        const moveFill = isLucky ? HIGHLIGHT_COLORS.moveLucky : HIGHLIGHT_COLORS.move;
+        const attackFill = isLucky ? HIGHLIGHT_COLORS.attackLucky : HIGHLIGHT_COLORS.attack;
         if (attackFirst ? isAttack : isMove) fill = attackFirst ? attackFill : moveFill;
         else if (attackFirst ? isMove : isAttack) fill = attackFirst ? moveFill : attackFill;
         return (
@@ -229,7 +265,10 @@ export function Board({
             width={CELL_SIZE}
             height={CELL_SIZE}
             fill={fill}
-            stroke="#cbd5e1"
+            // 격자선은 **거의 없어야 한다**. 어두운 판에서 밝은 선을 그으면 13×19=247개의 선이
+            // 판 전체에 격자무늬 노이즈를 만들어, 정작 봐야 할 기물과 강조 칸이 묻힌다.
+            // 칸 경계는 위의 두 톤 바닥이 대신 알려 준다.
+            stroke="rgba(255,255,255,0.05)"
             strokeWidth={0.5}
             cursor={clickable ? 'pointer' : 'default'}
             onClick={clickable ? () => onCellClick?.(p) : undefined}
@@ -259,7 +298,7 @@ export function Board({
         const arm = CELL_SIZE * 0.18;
         const thick = CELL_SIZE * 0.07;
         const remaining = healPackTimers[`${pack.position.x},${pack.position.y}`] ?? 0;
-        const color = remaining > 0 ? '#94a3b8' : '#15803d';
+        const color = remaining > 0 ? '#64748b' : '#4ade80';
         return (
           <g key={`pack-${pack.position.x},${pack.position.y}`} pointerEvents="none" opacity={remaining > 0 ? 0.5 : 1}>
             <rect x={cx - arm} y={cy - thick} width={arm * 2} height={thick * 2} fill={color} rx={1} />
@@ -280,7 +319,7 @@ export function Board({
             width={CELL_SIZE - 4}
             height={CELL_SIZE - 4}
             fill="none"
-            stroke="#3b82f6"
+            stroke="#7dd3fc"
             strokeWidth={2}
             pointerEvents="none"
           />
@@ -289,12 +328,12 @@ export function Board({
       {/* 겹친 칸에서는 나중에 그린 테두리만 보이므로, **지금 클릭이 향하는 쪽**을 나중에 그린다. */}
       {(clickPriority === 'attack'
         ? [
-            { prefix: 'mv', set: moveSet, color: '#16a34a' },
-            { prefix: 'atk', set: attackSet, color: '#ea580c' },
+            { prefix: 'mv', set: moveSet, color: '#4ade80' },
+            { prefix: 'atk', set: attackSet, color: '#fb923c' },
           ]
         : [
-            { prefix: 'atk', set: attackSet, color: '#ea580c' },
-            { prefix: 'mv', set: moveSet, color: '#16a34a' },
+            { prefix: 'atk', set: attackSet, color: '#fb923c' },
+            { prefix: 'mv', set: moveSet, color: '#4ade80' },
           ]
       ).flatMap(({ prefix, set, color }) =>
         [...set].map((key) => {
@@ -342,7 +381,7 @@ export function Board({
       {/* 이동 예정 경로: 칸마다 방향이 꺾일 수 있으므로 스텝별 선분으로 그린다.
           기본 이동 구간은 소유자 색 점선, 기술로 얻은 추가 이동 구간은 보라색 실선. */}
       {previewMoves.flatMap(({ unit, steps }) => {
-        const ownerColor = unit.owner === 'p1' ? '#2563eb' : '#dc2626';
+        const ownerColor = OWNER_COLOR[unit.owner];
         return steps.map((s) => (
           <line
             key={`preview-line-${unit.instanceId}-${s.stepIndex}`}
@@ -368,7 +407,7 @@ export function Board({
             textAnchor="middle"
             fontSize={8}
             fontWeight="bold"
-            fill={s.isExtra ? REWIND_COLOR : '#334155'}
+            fill={s.isExtra ? REWIND_COLOR : '#cbd5e1'}
             pointerEvents="none"
           >
             {s.stepIndex + 1}
@@ -378,7 +417,7 @@ export function Board({
       {/* 구간 도착점: "기본 이동으로 여기까지 / 기술 1회를 더 쓰면 여기까지 …"를 한눈에 보여준다.
           dealer2 시간역행처럼 충전 1회가 이동 Lv만큼을 통째로 더해 주는 기술에서 특히 중요하다. */}
       {previewMoves.flatMap(({ unit, steps }) => {
-        const ownerColor = unit.owner === 'p1' ? '#2563eb' : '#dc2626';
+        const ownerColor = OWNER_COLOR[unit.owner];
         return steps
           .filter((s) => s.isSegmentEnd)
           .map((s) => {
@@ -406,6 +445,23 @@ export function Board({
           fill="none"
           pointerEvents="none"
         />
+      ))}
+      {veilCells.map((p) => (
+        <rect
+          key={`veil-${p.x},${p.y}`}
+          x={px(p.x) + 1}
+          y={py(p.y) + 1}
+          width={CELL_SIZE - 2}
+          height={CELL_SIZE - 2}
+          fill="#c084fc"
+          fillOpacity={0.16}
+          stroke="#c084fc"
+          strokeWidth={1}
+          strokeDasharray="3 2"
+          pointerEvents="none"
+        >
+          <title>차단막 — 이 칸을 지나는 공격과 회복은 지워집니다</title>
+        </rect>
       ))}
       {/* 해결 재생: "누가 누구에게"를 잇는 선. 기물보다 **아래**에 깔아 토큰을 가리지 않게 한다. */}
       {rays.length > 0 && (
@@ -505,7 +561,7 @@ export function Board({
                 fontSize={10}
                 fontWeight="bold"
                 fill={style.stroke}
-                stroke="#fff"
+                stroke="#05080f"
                 strokeWidth={2.5}
                 paintOrder="stroke"
               >
@@ -588,6 +644,23 @@ export function Board({
           </g>
         );
       })}
+      {/**
+       * **판의 테두리는 판 안에 그린다.** 예전에는 CSS(`.board-svg { border }`)가 그렸는데,
+       * 이제 svg 상자가 남는 공간 전체라 판보다 크다 — CSS 테두리를 두면 판이 아니라 그 주변
+       * 여백을 두르게 된다. viewBox 안에 그리면 판이 줄어들 때 테두리도 함께 줄어 항상 판에 붙는다.
+       * 맨 마지막에 그리는 이유는 가장자리 칸·기물이 테두리를 덮지 않게 하기 위해서다.
+       */}
+      <rect
+        x={0.75}
+        y={0.75}
+        width={board.width * CELL_SIZE - 1.5}
+        height={board.height * CELL_SIZE - 1.5}
+        rx={3}
+        fill="none"
+        stroke="#3d5077"
+        strokeWidth={1.5}
+        pointerEvents="none"
+      />
     </svg>
   );
 }

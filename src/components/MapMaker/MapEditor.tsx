@@ -245,7 +245,14 @@ export function MapEditor() {
                 width={CELL}
                 height={CELL}
                 fill={KIND_COLOR[kind]}
-                stroke="#cbd5e1"
+                /**
+                 * 격자선은 **판보다 진하되 흰색은 아니어야** 한다. 밝은 판 시절의 `#cbd5e1`을
+                 * 어두운 타일 위에 그대로 두니 선이 타일보다 밝아, 만드는 중인 맵이 실제 대전
+                 * 화면과 전혀 다른 물건으로 보였다 — 맵 메이커의 값어치는 "여기서 본 게 거기서
+                 * 나온다"는 것뿐인데 그게 깨진다. 대신 완전히 지울 수도 없다: 칠하려면 칸 경계가
+                 * 보여야 하므로 대전 화면(0.05)보다는 진하게 둔다.
+                 */
+                stroke="rgba(255,255,255,0.14)"
                 strokeWidth={0.5}
                 cursor="crosshair"
                 onMouseDown={() => {

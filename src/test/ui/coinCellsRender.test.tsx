@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render } from '@testing-library/react';
-import { Board, CELL_SIZE } from '../../components/Board/Board';
+import { Board, CELL_SIZE, HIGHLIGHT_COLORS } from '../../components/Board/Board';
 import type { BoardConfig, Position } from '../../engine/types';
 
 /**
@@ -48,8 +48,8 @@ describe('coin cells on the board', () => {
     // 다른 **계열**의 색을 주면 "이동 칸이 아닌 무언가"로 읽힌다. 같은 초록의 옅은 톤이어야
     // "같은 이동 칸인데 보장이 안 될 뿐"이라는 뜻이 남는다.
     const { cellAt } = renderBoard();
-    expect(cellAt(GUARANTEED).getAttribute('fill')).toBe('#bbf7d0');
-    expect(cellAt(LUCKY).getAttribute('fill')).toBe('#e8f8ee');
+    expect(cellAt(GUARANTEED).getAttribute('fill')).toBe(HIGHLIGHT_COLORS.move);
+    expect(cellAt(LUCKY).getAttribute('fill')).toBe(HIGHLIGHT_COLORS.moveLucky);
   });
 
   it('outlines the coin-only cell with a dashed border', () => {
@@ -81,6 +81,6 @@ describe('coin cells on the board', () => {
       (r) => r.getAttribute('stroke-dasharray') === '3 3',
     );
     expect(dashed).toHaveLength(0);
-    expect(container.querySelector(`rect.board-cell[x="${LUCKY.x * CELL_SIZE}"]`)?.getAttribute('fill')).toBe('#bbf7d0');
+    expect(container.querySelector(`rect.board-cell[x="${LUCKY.x * CELL_SIZE}"]`)?.getAttribute('fill')).toBe(HIGHLIGHT_COLORS.move);
   });
 });

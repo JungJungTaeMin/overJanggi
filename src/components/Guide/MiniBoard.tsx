@@ -1,5 +1,6 @@
 import type { BoardConfig, Position } from '../../engine/types';
 import { getUnitType } from '../../data/unitTypes';
+import { UnitGlyph, unitGlyphPlacement } from '../unitGlyphs';
 
 export interface MiniMark {
   position: Position;
@@ -9,9 +10,8 @@ export interface MiniMark {
 export interface MiniToken {
   position: Position;
   owner: 'p1' | 'p2';
-  /** 역할 실루엣을 고르기 위한 기물 종류. 비우면 원으로 그린다. */
+  /** 역할 실루엣과 그림기호를 고르기 위한 기물 종류. 비우면 기호 없는 원으로 그린다. */
   typeId?: string;
-  label?: string;
 }
 
 interface Props {
@@ -123,10 +123,13 @@ export function MiniBoard({ board, cellSize, fills, dots, rings, tokens, showTer
         return (
           <g key={`t${i}`}>
             {shape}
-            {t.label && (
-              <text x={cx} y={cy + 3} textAnchor="middle" fontSize={Math.max(7, cellSize * 0.42)} fill="#fff">
-                {t.label}
-              </text>
+            {/* 도움말 그림에서도 판 위와 **같은 기호**를 쓴다. 여기서만 한 글자 이름을 쓰면
+                "도움말에서 본 것"과 "판에서 보는 것"이 서로 다른 그림이 되어, 설명을 읽고
+                대전으로 들어간 사람이 방금 배운 기물을 판에서 못 찾는다. */}
+            {t.typeId && (
+              <g transform={`translate(${cx}, ${cy})`}>
+                <UnitGlyph typeId={t.typeId} {...unitGlyphPlacement(role, r)} color="#05080f" />
+              </g>
             )}
           </g>
         );

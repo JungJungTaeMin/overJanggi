@@ -2,9 +2,10 @@ import type { Owner } from '../../engine/types';
 import { useGameStore } from '../../store/gameStore';
 import { getUnitType } from '../../data/unitTypes';
 import { REWIND_SKILL_ID } from '../../data/constants';
-import { ammoState } from '../../engine/unitStats';
+import { ammoState, paceState } from '../../engine/unitStats';
 import { hasActiveEffect, sumMagnitude } from '../../engine/statusEffects';
 import { UnitActionSelector } from './UnitActionSelector';
+import { UnitMark } from '../unitGlyphs';
 import { summarizeBaseAction, summarizeSkillMove, summarizeSkillUse } from './planSummary';
 
 interface Props {
@@ -43,6 +44,7 @@ export function ActionPanel({ owner, label }: Props) {
           const rewindGate = typeDef.skills.find((s) => s.id === REWIND_SKILL_ID)?.gate;
           const rewindMax = rewindGate?.type === 'charge' ? rewindGate.maxCharges : 0;
           const ammo = ammoState(unit);
+          const pace = paceState(unit);
 
           return (
             <div key={unit.instanceId} className={`unit-row${selected ? ' selected' : ''}${!unit.alive ? ' dead' : ''}`}>
@@ -51,7 +53,7 @@ export function ActionPanel({ owner, label }: Props) {
                 className="unit-row-header"
                 onClick={() => setSelectedUnit(selected ? null : unit.instanceId)}
               >
-                <span className={`unit-role-dot role-${typeDef.role}`} />
+                <UnitMark typeId={unit.typeId} size={17} />
                 <span className="unit-name">{typeDef.name}</span>
                 {unit.alive ? (
                   <>
@@ -75,6 +77,15 @@ export function ActionPanel({ owner, label }: Props) {
                     {hasActiveEffect(unit, 'stun', state.turnNumber) && <span className="badge badge-stun">행동불가</span>}
                     {hasActiveEffect(unit, 'barrier', state.turnNumber) && <span className="badge badge-barrier">방벽</span>}
                     {hasActiveEffect(unit, 'attackMode', state.turnNumber) && <span className="badge badge-attackmode">공격모드</span>}
+                    {hasActiveEffect(unit, 'veil', state.turnNumber) && <span className="badge badge-veil">차단막</span>}
+                    {/* 러너 가속: 지금 이동 Lv이 얼마인지 못 보면 몇 칸 갈 수 있는지·발맞추기가 얼마를
+                        줄지 둘 다 계획할 수 없다. 최대치에 닿았으면 다음 턴 초기화까지 함께 알린다. */}
+                    {pace && (
+                      <span className="badge badge-pace">
+                        이동 Lv {pace.level}/{pace.max}
+                        {pace.level >= pace.max ? ' · 다음 이동 후 초기화' : ''}
+                      </span>
+                    )}
                     {/* 조준 보조는 지속시간이 짧아 "지금 이 턴에 얼마나 세졌는지"를 그 자리에서 못 보면
                         계획을 못 세운다. 그래서 증가분을 숫자로 같이 띄운다(여러 개면 합산). */}
                     {sumMagnitude(unit, 'buff', state.turnNumber) > 0 && (

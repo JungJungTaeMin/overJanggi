@@ -6,9 +6,12 @@ import { UnitPicker } from '../../components/DraftSetup/UnitPicker';
 import { useGameStore } from '../../store/gameStore';
 import type { GameMode } from '../../store/gameStore';
 import type { Owner, Position } from '../../engine/types';
-
-/** 진영 색 — 토큰이 몇 개 그려졌는지 세는 유일한 표식이다(HP바 색과 겹치지 않는다). */
-const OWNER_FILL: Record<Owner, string> = { p1: '#2563eb', p2: '#dc2626' };
+/**
+ * 진영 색 — 토큰이 몇 개 그려졌는지 세는 유일한 표식이다(HP바 색과 겹치지 않는다).
+ * 값을 베껴 적지 않고 그리는 쪽에서 가져온다: 색을 한 번 바꿀 때마다 멀쩡한 은닉 테스트가
+ * 함께 깨지면, 색을 고치는 일이 테스트를 고치는 일이 된다.
+ */
+import { OWNER_COLOR as OWNER_FILL } from '../../components/Board/UnitToken';
 
 function countTokens(container: HTMLElement, owner: Owner): number {
   return [...container.querySelectorAll('[fill]')].filter((el) => el.getAttribute('fill') === OWNER_FILL[owner]).length;

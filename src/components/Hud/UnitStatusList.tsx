@@ -2,6 +2,7 @@ import type { Owner } from '../../engine/types';
 import { useGameStore } from '../../store/gameStore';
 import { getUnitType } from '../../data/unitTypes';
 import { isEffectActive } from '../../engine/statusEffects';
+import { statusLabel } from '../effectLabels';
 
 /**
  * **동전은 「지금 걸려 있는 상태」가 아니다.**
@@ -52,14 +53,23 @@ export function UnitStatusList({ owner, label }: { owner: Owner; label: string }
                   {u.currentHp}/{u.maxHp}
                   {u.shieldHp > 0 ? ` (+보호막${u.shieldHp})` : ''}
                 </td>
-                <td>{cooldowns.length ? cooldowns.map(([id, v]) => `${id}:${v}`).join(', ') : '-'}</td>
+                {/* 쿨타임 열은 `support4_veil:4`처럼 **기술 식별자**를 그대로 뿌리고 있었다.
+                    기술 이름은 이미 기물 정의에 있으므로 거기서 찾아 쓴다 — 「차단막 4턴」이라고
+                    적혀야 계획 패널의 「차단막」 배지와 같은 것으로 읽힌다. */}
+                <td>
+                  {cooldowns.length
+                    ? cooldowns
+                        .map(([id, v]) => `${typeDef.skills.find((s) => s.id === id)?.name ?? id} ${v}턴`)
+                        .join(', ')
+                    : '-'}
+                </td>
                 <td>
                   {charges.length ? charges.join(', ') : '-'}
                   {u.rewindSnapshot
                     ? ` · ⟲(${u.rewindSnapshot.position.x}, ${u.rewindSnapshot.position.y})·체력${u.rewindSnapshot.hp}`
                     : ''}
                 </td>
-                <td>{activeEffects.length ? activeEffects.map((e) => e.type).join(', ') : '-'}</td>
+                <td>{activeEffects.length ? activeEffects.map((e) => statusLabel(e.type)).join(', ') : '-'}</td>
               </tr>
             );
           })}

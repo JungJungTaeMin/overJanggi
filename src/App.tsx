@@ -10,6 +10,8 @@ import { getUnitType } from './data/unitTypes';
 import { ROSTER_RULES } from './data/rosterRules';
 import { samePosition } from './engine/grid';
 import { canPlanSkillMove } from './engine/movePath';
+import { hasActiveEffect } from './engine/statusEffects';
+import { veilAt } from './engine/veil';
 import { UnitPicker } from './components/DraftSetup/UnitPicker';
 import { PlacementScreen } from './components/DraftSetup/PlacementScreen';
 import { Board } from './components/Board/Board';
@@ -332,6 +334,21 @@ function GameScreen({ shortcutsOff }: { shortcutsOff: boolean }) {
   const shownHealPackTimers = replayStep ? replayStep.healPackTimers : state.healPackTimers;
 
   /**
+   * 차단막이 덮은 칸. 판정과 같은 함수(engine/veil.ts)로 칸을 훑어야 표시와 결과가 갈라지지 않는다 —
+   * 화면용으로 반경을 다시 적으면 그 사본이 언젠가 엔진과 달라진다.
+   */
+  const veilCells = useMemo<Position[]>(() => {
+    if (!shownUnits.some((u) => u.alive && hasActiveEffect(u, 'veil', state.turnNumber))) return [];
+    const cells: Position[] = [];
+    for (let y = 0; y < state.board.height; y++) {
+      for (let x = 0; x < state.board.width; x++) {
+        if (veilAt({ x, y }, shownUnits, state.turnNumber)) cells.push({ x, y });
+      }
+    }
+    return cells;
+  }, [shownUnits, state.turnNumber, state.board]);
+
+  /**
    * **행동을 정했으면 다음 기물로 자동으로 넘어간다.** 5기물을 계획하려면 "기물 클릭 → 행동 지정"을
    * 다섯 번 해야 했는데, 그중 절반인 선택 클릭이 사라진다.
    *
@@ -439,6 +456,7 @@ function GameScreen({ shortcutsOff }: { shortcutsOff: boolean }) {
             // "3칸이 보장된다"는 거짓말은 하지 않게 한다 — 근거는 Planning/actionGeometry.ts.
             luckyCells={canPlanClicks ? [...luckyCells(moveOptions), ...luckyCells(attackOptions)] : []}
             healCells={healCells}
+            veilCells={veilCells}
             clickPriority={clickMode}
             selectedUnitId={selectedUnitId}
             onCellClick={handleCellClick}
@@ -447,6 +465,10 @@ function GameScreen({ shortcutsOff }: { shortcutsOff: boolean }) {
             rewindAnchors={rewindAnchors}
             flipped={flipped}
           />
+          {/* **자리를 늘 잡아 둔다.** 예전에는 이 묶음이 기물을 고를 때만 나타났는데, 판이 남는
+              높이에 맞춰 커지므로 이게 나타나고 사라질 때마다 판 크기가 통째로 바뀌었다 —
+              기물을 고를 때마다 판이 한 번씩 출렁이는 셈이다. 비어 있어도 높이는 그대로 둔다. */}
+          <div className="board-footer">
           {selectedUnit && (moveOptions.length > 0 || attackOptions.length > 0) && (
             <>
               {/* 겹친 칸의 클릭 뜻을 정하는 토글 — 지금 선택된 쪽이 칸 색과 클릭 결과를 모두 결정한다. */}
@@ -486,13 +508,16 @@ function GameScreen({ shortcutsOff }: { shortcutsOff: boolean }) {
               </p>
             </>
           )}
-          <RespawnTracker />
-          <ResolutionLog />
+          </div>
         </div>
         {/* 계획 패널을 보드 **옆**에 둔다. 아래에 깔면 매 턴 판과 패널을 번갈아 보느라 스크롤해야
             했는데, 이 게임은 칸을 클릭해 계획하므로 둘이 동시에 보여야 한다.
             계획이 상태 목록보다 위인 건 매 턴 만지는 쪽이기 때문이다(상태는 참고용이고, 체력은
-            계획 패널 안에도 이미 나온다). */}
+            계획 패널 안에도 이미 나온다).
+
+            부활 추적기와 해결 로그도 여기 있다. 판 **아래**에 두면 둘 다 세로로 길어서 판이
+            차지할 높이를 빼앗고, 그 결과 판이 화면 밖으로 밀려 플레이 중에 스크롤하게 된다.
+            둘 다 "읽는 것"이라 판이 아니라 글이 모여 있는 이쪽이 제자리다. */}
         <div className="side-column">
           <div className="action-panels">
             {planningOwners.map((owner) => (
@@ -503,6 +528,8 @@ function GameScreen({ shortcutsOff }: { shortcutsOff: boolean }) {
             <UnitStatusList owner="p1" label="Player 1" />
             <UnitStatusList owner="p2" label="Player 2" />
           </div>
+          <RespawnTracker />
+          <ResolutionLog />
         </div>
       </div>
     </div>
@@ -565,8 +592,19 @@ export default function App() {
    */
   const [guideOpen, setGuideOpen] = useState(false);
 
+  /**
+   * 판을 두는 동안에는 **화면 하나가 판 하나**여야 한다. 그 전까지 이 껍데기는 그냥 세로로 흐르는
+   * 문서였고, 13×19 맵(546×798px)이 900px 화면에서 잘려 매 턴 스크롤해야 했다 — 판을 보려면
+   * 계획 패널이 화면 밖으로 나가고, 계획하려면 판이 나가는 식이라 둘을 번갈아 보는 게임에서는
+   * 치명적이다. 게임 단계에서만 높이를 화면에 못 박고(`playing`), 판이 남는 높이에 맞춰 줄어든다.
+   * 다른 단계(메뉴·드래프트·맵 메이커)는 세로로 길어도 되는 화면이라 그대로 흐르게 둔다.
+   *
+   * **배치도 같은 화면이다.** 배치는 판을 눈으로 훑고 칸을 찍는 일이라, 여기만 셸을 그냥 두면
+   * 뒷줄에 기물을 놓으려고 매번 스크롤을 내려야 한다 — 전투에서 없앤 그 문제가 배치에서만
+   * 살아남는 셈이다. 그래서 두 단계가 같은 클래스를 공유한다.
+   */
   return (
-    <div className="app-shell">
+    <div className={stage === 'game' || stage === 'placement' ? 'app-shell playing' : 'app-shell'}>
       <div className="app-head">
         <h1 className="app-title">Simultaneous</h1>
         <button type="button" className="btn-secondary btn-guide" onClick={() => setGuideOpen(true)}>

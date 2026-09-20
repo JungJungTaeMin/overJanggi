@@ -3,6 +3,7 @@ import type { BoardConfig, Position, UnitTypeDef } from '../../engine/types';
 import { unitTypes, maxHpFor } from '../../data/unitTypes';
 import { CAPTURE_MARGIN, RESPAWN_TURNS, WIN_SCORE } from '../../data/constants';
 import { mapDefinition } from '../../data/mapDefinitions';
+import { rosterSizeOf } from '../../data/rosterRules';
 import { captureWinner } from '../../engine/capture';
 import { useGameStore } from '../../store/gameStore';
 import { MiniBoard, type MiniMark, type MiniToken } from './MiniBoard';
@@ -15,12 +16,16 @@ const ROLE_LABEL: Record<string, string> = { tank: '탱커', dealer: '딜러', s
 /**
  * 기술이 **무엇을 하는지**만 손으로 적는다. 숫자(사거리·쿨타임·지속)는 전부 데이터에서 읽으므로
  * 밸런스를 고쳐도 이 문장은 낡지 않는다 — 낡을 수 있는 값은 여기 한 글자도 없다.
+ *
+ * `export`인 건 커버리지 테스트가 이 표를 직접 돌기 위해서다(test/ui/skillBlurbCoverage). 빠진
+ * 기술은 화면에 **빈 줄**로 나오지 — 사라지지 않는다 — 그래서 눈으로는 잡히지 않는다.
  */
-const SKILL_BLURB: Record<string, string> = {
+export const SKILL_BLURB: Record<string, string> = {
   tank1_fortify: '한 턴 동안 최대 체력과 보호막을 얻고 한 칸 더 움직인다.',
   tank2_charge: '지나간 칸 수만큼 경로 위의 적을 들이받는다. 적을 밟고 지나갈 수 있다.',
   tank3_barrier: '한 턴 동안 자신을 향한 직선 공격을 막는 방벽을 세운다.',
   tank3_root: '적 하나를 한 턴 동안 못 움직이게 묶는다.',
+  tank4_shove: '적 하나를 자신에게서 멀어지는 쪽으로 밀어낸다. 벽이나 다른 기물에 부딪히면 피해를 입는다.',
   dealer2_rewind_move: '이동을 한 번 더 한다. 충전을 다 쓰면 처음 쓴 시점의 자리와 체력으로 되돌아간다.',
   dealer3_attack_mode: '켜면 공격할 수 있고, 켜져 있는 동안은 움직일 수 없다.',
   dealer4_swap: '사거리 안의 아군과 자리를 맞바꾼다.',
@@ -29,6 +34,11 @@ const SKILL_BLURB: Record<string, string> = {
   support2_root: '가까운 적 하나를 한 턴 동안 묶는다.',
   support2_buff: '아군 하나의 공격력을 한 턴 올린다.',
   support3_turret: '앞칸에 포탑을 세운다. 포탑은 주변 아군을 회복시키고 팀당 한 기만 남는다.',
+  support4_veil: '자기 주변 여덟 칸을 덮어, 그 칸을 지나는 공격과 회복을 아군 것까지 전부 지운다.',
+  support4_pace: '옆 칸 아군에게 지금 자신의 이동 Lv만큼 이동력을 나눠 준다. 아군은 다음 턴에 그만큼 더 걷는다.',
+  tank5_hook: '적 하나를 자신 쪽으로 끌어온다. 자기 바로 앞칸까지만 오고, 도중에 막히면 거기서 멈춘다.',
+  support5_recall: '멀리 있는 아군 하나를 자기 옆 빈칸으로 불러온다.',
+  support6_mark: '적 하나에게 표식을 붙인다. 그 턴 동안 누가 때리든 받는 피해가 늘어난다.',
 };
 
 /**
@@ -90,7 +100,7 @@ function UnitCard({ typeDef }: { typeDef: UnitTypeDef }) {
         fills={fills}
         dots={dots}
         rings={rings}
-        tokens={[{ position: DIAGRAM_ORIGIN, owner: 'p1', typeId: typeDef.id, label: typeDef.shortLabel }]}
+        tokens={[{ position: DIAGRAM_ORIGIN, owner: 'p1', typeId: typeDef.id }]}
         title={`${typeDef.name} 이동·사거리`}
       />
       <dl className="guide-stats">
@@ -145,6 +155,9 @@ function UnitCard({ typeDef }: { typeDef: UnitTypeDef }) {
  */
 export function GuideOverlay({ onClose }: { onClose: () => void }) {
   const quickStart = useGameStore((s) => s.quickStart);
+  // 편성 인원은 규칙마다 다르다(6대6은 6기다). 도움말이 5를 못 박아 두면 6대6을 고른 사람은
+  // 화면과 설명이 어긋난 채로 읽게 된다 — 규칙을 고르는 곳이 메뉴이므로 여기서도 규칙을 읽는다.
+  const rosterSize = rosterSizeOf(useGameStore((s) => s.rosterRule));
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -175,11 +188,14 @@ export function GuideOverlay({ onClose }: { onClose: () => void }) {
                 닿으면 그 자리에서 이긴다. 턴당 최대 1점이라 최소 {WIN_SCORE}턴은 점령지를 지켜야 한다.
               </p>
               <p>
-                양쪽 <strong className="swatch-start">시작지점</strong>에서 5기물로 출발한다. 죽어도 완전히 잃지 않는다 —{' '}
+                양쪽 <strong className="swatch-start">시작지점</strong>에서 {rosterSize}기물로 출발한다. 죽어도 완전히 잃지 않는다 —{' '}
                 <strong>{RESPAWN_TURNS}턴</strong> 뒤 시작지점에서 체력을 모두 채우고 되살아난다. 그래서 이 게임은
                 기물을 아끼는 게임이 아니라 <strong>점령지를 몇 턴 더 밟느냐</strong>의 게임이다.
               </p>
-              <p className="muted">회색 칸은 지나갈 수 없는 장애물이고, 직선 공격도 그 뒤로는 닿지 않는다.</p>
+              {/* 판을 어둡게 바꾸면서 벽이 회색(#94a3b8)에서 거의 검정(#05080f)이 됐다. 설명문에
+                  「회색 칸」이 남아 있으면 처음 보는 사람은 바닥의 옅은 슬레이트 칸을 벽으로 읽는다 —
+                  실제로 판에서 가장 어두운 칸이 벽이다. */}
+              <p className="muted">가장 어두운 칸은 지나갈 수 없는 장애물이고, 직선 공격도 그 뒤로는 닿지 않는다.</p>
             </div>
           </div>
         </section>
@@ -187,7 +203,7 @@ export function GuideOverlay({ onClose }: { onClose: () => void }) {
         <section className="guide-section">
           <h3>2. 한 턴은 이렇게 흐른다</h3>
           <p>
-            번갈아 두는 게 아니라 <strong>양쪽이 동시에</strong> 계획한다. 상대가 무엇을 할지 모르는 채로 5기물의
+            번갈아 두는 게 아니라 <strong>양쪽이 동시에</strong> 계획한다. 상대가 무엇을 할지 모르는 채로 {rosterSize}기물의
             행동을 정하고, 공개 버튼을 누르면 아래 순서대로 해결된다. 판 위에서도 이 순서 그대로
             한 단계씩 재생되므로, 누가 맞았고 누가 빗나갔는지를 눈으로 따라갈 수 있다.
           </p>
@@ -258,7 +274,8 @@ export function GuideOverlay({ onClose }: { onClose: () => void }) {
         </section>
 
         <section className="guide-section">
-          <h3>4. 기물 10종은 이렇게 움직인다</h3>
+          {/* 종 수를 손으로 적지 않는다 — 기물을 하나 추가하면 이 문장만 조용히 낡는다. */}
+          <h3>4. 기물 {unitTypes.length}종은 이렇게 움직인다</h3>
           <p>
             아래 그림은 모두 <strong>같은 축척</strong>이다. 가운데가 그 기물이고, 주변 칸이 한 턴에 닿는 범위다.
           </p>

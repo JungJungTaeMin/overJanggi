@@ -45,7 +45,9 @@ export function SkillTargetPicker({ skill, unit, allUnits, board, plan, value, o
     // 사거리 밖 대상은 **지우지 않고 비활성**으로 남긴다. 목록에서 아예 빼 버리면 "왜 저 기물은
     // 고를 수 없지?"에 답이 없지만, 회색으로 남겨 두면 사거리와 직선 제약을 그 자리에서 배운다.
     const spec = skillRangeSpec(skill);
-    const from = spec ? plannedDestination(unit, plan, board) : null;
+    // 이동 단계 기술(자리교체·발맞추기)은 이동보다 먼저 해결되므로 도착 칸이 아니라 지금 선 칸이
+    // 기준이다 — validation.ts와 같은 근거. 두 곳이 다른 칸을 재면 고를 수 있는 대상이 실제로는 빗나간다.
+    const from = spec ? (skill.effectCategory === 'movement' ? unit.position : plannedDestination(unit, plan, board)) : null;
     const outOfRange = (u: UnitInstance) =>
       !!spec && (!from || !u.position || !isWithinSkillRange(from, u.position, spec.range, board, spec.axis));
 

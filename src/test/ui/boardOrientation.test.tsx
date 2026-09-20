@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { Board, CELL_SIZE } from '../../components/Board/Board';
+import { TERRAIN_COLORS } from '../../maps/mapModel';
 import { boardView, isBoardFlipped } from '../../components/Board/orientation';
 import { createUnitInstance } from '../../engine/createInitialState';
 import type { BoardConfig, Position } from '../../engine/types';
@@ -74,9 +75,9 @@ describe('판 뒤집기 — 내 진영을 아래로', () => {
     const { container } = render(<Board board={board} units={[]} flipped />);
     // 엔진 좌표 (0,0)인 p1 시작지점은 화면에서는 마지막 행·마지막 열에 있다.
     const cell = rectAt(container, { x: board.width - 1, y: board.height - 1 });
-    expect(cell?.getAttribute('fill')).toBe('#dbeafe'); // p1 진영 색
+    expect(cell?.getAttribute('fill')).toBe(TERRAIN_COLORS.startA); // p1 진영 색
     // 반대로 화면 맨 위 왼쪽 칸은 p2 진영이다.
-    expect(rectAt(container, { x: 0, y: 0 })?.getAttribute('fill')).toBe('#fee2e2');
+    expect(rectAt(container, { x: 0, y: 0 })?.getAttribute('fill')).toBe(TERRAIN_COLORS.startB);
   });
 
   it('기물도 같은 자리로 따라 그려진다', () => {

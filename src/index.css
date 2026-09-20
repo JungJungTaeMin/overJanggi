@@ -1,20 +1,75 @@
+/* ============================================================================
+   색 토큰 — 다크 전술 보드
+   ----------------------------------------------------------------------------
+   왜 토큰으로 두는가: 예전에는 색이 CSS 129곳과 SVG 여기저기에 하드코딩돼 있어서
+   "판의 벽 색"과 "범례의 벽 색"처럼 **같아야 하는 두 값이 따로** 적혀 있었다. 한쪽만
+   고치면 조용히 어긋나고, 그 어긋남은 스크린샷을 나란히 놓기 전엔 안 보인다.
+
+   표면은 **어두운 바닥에서 밝은 쪽으로 쌓는다**. 다크 테마에서 깊이는 그림자가 아니라
+   밝기로 표현된다 — 어두운 배경 위의 그림자는 보이지 않기 때문이다. 그래서 위로 올라온
+   요소일수록 밝다: page(바닥) < panel(카드) < raised(카드 위 칩·입력) 이고, 반대로
+   우묵하게 파인 곳(로그·표)은 page보다 더 어둡다.
+   ============================================================================ */
 :root {
-  --p1: #2563eb;
-  --p1-bg: #eff6ff;
-  --p2: #dc2626;
-  --p2-bg: #fef2f2;
-  --ink: #1e293b;
-  --muted: #64748b;
-  --border: #e2e8f0;
-  --panel-bg: #ffffff;
-  --page-bg: #f1f5f9;
-  --accent: #f59e0b;
+  /* ── 표면 ── */
+  --page-bg: #0a0f1a;
+  --panel-bg: #141d2e;
+  --raised-bg: #1e2a41;
+  --sunken-bg: #0d141f;
+
+  /* ── 글자 ── */
+  --ink: #e6edf8;
+  --muted: #92a3bf;
+  /* 표의 '-'처럼 있다는 것만 알리면 되는 글자. muted보다 더 물러나 있어야 실제 값이 눈에 띈다. */
+  --faint: #5d6f8f;
+
+  /* ── 선 ── */
+  --border: #24314b;
+  /* 눌린 상태·선택된 카드처럼 **경계 자체가 정보**일 때만 쓴다. */
+  --border-strong: #3c4d70;
+
+  /* ── 팀 ──
+     밝은 배경에서 쓰던 #2563eb·#dc2626은 어두운 바닥에서 탁해져 서로 구분이 흐려진다.
+     한 단계 밝은 색으로 올리고, 옅은 배경(-bg)은 불투명 색 대신 **반투명**으로 둔다 —
+     그래야 어느 표면 위에 얹혀도 그 표면의 밝기를 따라간다. */
+  --p1: #5b9cff;
+  --p1-bg: rgba(91, 156, 255, 0.14);
+  --p1-line: rgba(91, 156, 255, 0.45);
+  --p2: #ff6b6b;
+  --p2-bg: rgba(255, 107, 107, 0.14);
+  --p2-line: rgba(255, 107, 107, 0.45);
+
+  /* ── 의미색 ── */
+  --accent: #fbbf24;
+  --accent-bg: rgba(251, 191, 36, 0.14);
+  --danger: #f87171;
+  --good: #4ade80;
+  --veil: #c084fc;
+  --pace: #22d3ee;
+
+  /* ── 판 ──
+     지형은 판 위에서 **글자 없이 구분돼야** 하므로 밝기 차를 크게 벌린다. */
+  --board-floor: #1a2438;
+  --board-floor-alt: #162033;
+  --board-wall: #060a12;
+  --board-grid: rgba(255, 255, 255, 0.045);
+  --board-edge: #33456a;
+  --capture: #f5b73d;
+  --capture-bg: rgba(245, 183, 61, 0.16);
+
   /* 도움말 그림의 표시 색. 격자(SVG의 fill)와 범례(span의 background)가 같은 값을 써야
      "범례에서 본 색"과 "그림에서 본 색"이 같다 — 두 군데에 따로 적으면 반드시 갈라진다. */
-  --mark-move: rgba(34, 197, 94, 0.35);
-  --mark-move-extra: rgba(34, 197, 94, 0.14);
-  --mark-heal: #0d9488;
-  color-scheme: light;
+  --mark-move: rgba(74, 222, 128, 0.42);
+  --mark-move-extra: rgba(74, 222, 128, 0.16);
+  --mark-heal: #2dd4bf;
+
+  /* ── 그림자 ──
+     다크에서 그림자는 깊이를 못 만들지만 **판과 패널을 바닥에서 떼어 놓는** 역할은 한다. */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 10px 34px rgba(0, 0, 0, 0.55);
+
+  color-scheme: dark;
 }
 
 * {
@@ -23,53 +78,77 @@
 
 body {
   margin: 0;
-  background: var(--page-bg);
+  /* 판 바깥은 **아무것도 아닌 곳**이어야 한다 — 균일한 단색이면 화면 가장자리가 어디까지가
+     UI이고 어디부터가 배경인지 흐려진다. 위쪽에 아주 옅은 빛을 두어 판이 놓인 바닥처럼 만든다. */
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(91, 156, 255, 0.07), transparent 70%),
+    var(--page-bg);
+  background-attachment: fixed;
   color: var(--ink);
   font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Segoe UI', system-ui, sans-serif;
+  /* 다크에서 기본 렌더링은 글자가 굵고 번져 보인다. */
+  -webkit-font-smoothing: antialiased;
 }
 
 h1, h2, h3, h4 {
   margin: 0 0 8px;
+  letter-spacing: -0.01em;
 }
 
 button {
   font: inherit;
   cursor: pointer;
   border: 1px solid var(--border);
-  background: #fff;
-  border-radius: 6px;
-  padding: 6px 10px;
+  background: var(--raised-bg);
+  border-radius: 8px;
+  padding: 6px 12px;
   color: var(--ink);
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
 button:hover:not(:disabled) {
-  border-color: #94a3b8;
-  background: #f8fafc;
+  border-color: var(--border-strong);
+  background: #26344f;
 }
 
 button:disabled {
   cursor: not-allowed;
-  opacity: 0.5;
+  opacity: 0.45;
 }
 
+/* 키보드로 훑는 사람에게 지금 어디인지 보여야 한다. 다크에서는 기본 outline이 배경에 묻힌다. */
+:where(button, select, input, [tabindex]):focus-visible {
+  outline: 2px solid var(--p1);
+  outline-offset: 2px;
+}
+
+/* 화면에서 **다음에 눌러야 할 것 하나**. 어두운 판 위에서 팀색보다 밝게 둬야 눈이 먼저 간다. */
 .btn-primary {
-  background: var(--ink);
+  background: linear-gradient(180deg, #4d93ff, #2f6fdd);
   color: #fff;
-  border-color: var(--ink);
+  border-color: #5b9cff;
   font-weight: 600;
+  box-shadow: var(--shadow-sm);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #334155;
-  border-color: #334155;
+  background: linear-gradient(180deg, #63a4ff, #3d7cea);
+  border-color: #7db3ff;
 }
 
 select, input {
   font: inherit;
-  padding: 4px 6px;
+  padding: 5px 8px;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: #fff;
+  border-radius: 8px;
+  background: var(--raised-bg);
+  color: var(--ink);
+}
+
+/* 드롭다운 목록 자체는 OS가 그린다 — color-scheme: dark가 그걸 어둡게 만들지만,
+   option 배경까지 따라오지 않는 브라우저가 있어 명시한다. */
+select option {
+  background: var(--panel-bg);
   color: var(--ink);
 }
 
@@ -79,9 +158,67 @@ select, input {
   padding: 16px 20px 48px;
 }
 
+/**
+ * **판을 두는 동안은 스크롤이 없다.** 높이를 화면에 못 박고(100dvh — 모바일 주소창이 접혔다
+ * 펴져도 판 크기가 튀지 않게 vh 대신 dvh), 남는 높이를 판이 가져간다. `overflow: hidden`이
+ * 핵심이다 — 이게 없으면 안쪽 어느 요소든 길어지는 순간 문서가 다시 늘어나 판이 화면 밖으로 밀린다.
+ * 대신 길어질 수 있는 쪽(옆 열)은 자기 안에서 따로 스크롤한다.
+ */
+.app-shell.playing {
+  max-width: none;
+  height: 100dvh;
+  padding: 8px 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+
+/* 머리말·배너는 자기 높이만 쓰고, 남는 높이는 전부 판이 있는 쪽으로. */
+.app-shell.playing > * {
+  flex: 0 0 auto;
+}
+
+/* min-height:0이 없으면 flex 항목은 **내용보다 작아지지 않는다** — 판이 줄어들 길이 막힌다. */
+.app-shell.playing > .game-screen {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.app-shell.playing .mode-banner {
+  margin-bottom: 0;
+}
+
 .app-title {
   font-size: 22px;
   color: var(--ink);
+}
+
+/* 판을 두는 동안 제목은 **표지**일 뿐이라 높이를 덜 먹게 줄인다. 판이 남는 높이를 전부
+   가져가므로, 위에서 아낀 1px은 그대로 판 1px이 된다. */
+.app-shell.playing .app-title {
+  font-size: 13px;
+  color: var(--faint);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.app-shell.playing .app-head {
+  min-height: 0;
+}
+
+.app-shell.playing .btn-guide {
+  padding: 2px 10px;
+  font-size: 12px;
+}
+
+.app-shell.playing .mode-banner {
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+.app-shell.playing .top-bar {
+  padding: 6px 14px;
 }
 
 /* ---------- Game screen layout ---------- */
@@ -92,6 +229,10 @@ select, input {
   gap: 16px;
 }
 
+.app-shell.playing .game-screen {
+  gap: 8px;
+}
+
 .top-bar {
   position: sticky;
   top: 0;
@@ -100,11 +241,11 @@ select, input {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  background: var(--panel-bg);
+  background: linear-gradient(180deg, var(--raised-bg), var(--panel-bg));
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 10px 16px;
-  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06);
+  padding: 8px 16px;
+  box-shadow: var(--shadow-md);
 }
 
 .main-layout {
@@ -112,6 +253,21 @@ select, input {
   gap: 20px;
   align-items: flex-start;
   flex-wrap: wrap;
+}
+
+/**
+ * 게임 중의 두 열은 **화면 높이를 나눠 갖는 형제**다. `align-items: stretch`(기본값)로 둬야
+ * 두 열 모두 화면 높이를 갖고, 그래야 판이 자기 열의 남는 높이를 %로 계산할 수 있다.
+ * `flex-wrap: nowrap`인 이유는 줄바꿈이 곧 세로로 길어짐이기 때문이다 — 좁은 화면 대응은
+ * 아래 미디어쿼리에서 "높이 고정을 포기하고 다시 흐르게" 하는 쪽으로 따로 처리한다.
+ */
+.app-shell.playing .main-layout {
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: stretch;
+  flex-wrap: nowrap;
+  justify-content: center;
+  gap: 14px;
 }
 
 .board-column {
@@ -123,16 +279,56 @@ select, input {
   flex: 0 0 auto;
 }
 
+/**
+ * 판은 거의 항상 **높이에 먼저 걸린다**(13×19라 세로로 길다). 그래서 이 열에 남는 폭을 전부
+ * 주면, 판은 높이에 맞춰 줄어든 채 좌우로 600px쯤 빈 자리를 끌고 다닌다 — 그 600px은 옆
+ * 패널에서 빼앗아 아무것도 안 하고 있는 폭이다. 열이 판 폭만큼만 차지하게 두고(`flex: 0 1 auto`,
+ * 아래 board-svg가 높이에서 폭을 역산한다) 남는 폭은 읽을 것들에게 넘긴다.
+ */
+.app-shell.playing .board-column {
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: 0;
+  gap: 6px;
+}
+
 .board-svg {
-  border: 1px solid #94a3b8;
+  border: 1px solid var(--board-edge);
   border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+  background: var(--board-floor);
+  box-shadow: var(--shadow-md);
   /* viewBox 덕에 가로세로 비율이 고정된다 — 화면(13×19=546×798px)을 넘칠 때만 비율 그대로 줄어든다. */
   width: auto;
   height: auto;
   max-width: 100%;
   max-height: calc(100vh - 120px);
+}
+
+/**
+ * **판을 남는 공간에 그대로 붓는다.** 예전에는 `max-height: calc(100vh - 120px)`로 잘랐는데,
+ * 이 120px은 판 위에 실제로 쌓인 것(제목·배너·점수바·재생바 ≈ 180px)을 세지 않은 어림값이라
+ * 판이 늘 화면 아래로 넘쳤다. 지금은 어림하지 않는다 — 남는 상자를 폭·높이 100%로 채우면
+ * viewBox의 preserveAspectRatio가 알아서 비율을 지키며 가운데 맞춤으로 축소한다.
+ *
+ * 그래서 테두리·배경을 **CSS에서 뺐다**. 판의 테두리는 Board.tsx가 viewBox 안에 그린다 —
+ * 바깥 상자에 그리면 판이 아니라 그 주변 여백을 두르게 된다.
+ *
+ * `width: auto`가 핵심이다. 높이는 flex가 남는 공간에 맞춰 정하고(`flex: 1 1 auto` +
+ * `min-height: 0` — 이게 없으면 flex 항목은 내용보다 작아지지 않아 판이 줄어들 길이 막힌다),
+ * 폭은 viewBox의 가로세로비로 **높이에서 역산된다**. 폭까지 100%로 채우면 판은 그대로인데
+ * 상자만 커져서, 그만큼이 옆 패널이 못 쓰는 빈 자리가 된다.
+ */
+.app-shell.playing .board-svg {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: none;
+  align-self: center;
+  border: none;
+  background: none;
+  box-shadow: none;
 }
 
 .board-cell.clickable:hover {
@@ -248,7 +444,7 @@ select, input {
   padding: 6px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #f8fafc;
+  background: var(--sunken-bg);
 }
 
 .playback-row {
@@ -291,7 +487,7 @@ select, input {
   padding: 2px 7px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: #fff;
+  background: var(--raised-bg);
   color: var(--muted);
   font-size: 11px;
   /* 고른 쪽만 굵게 하면 폭이 변해 옆 버튼들이 밀린다 — 색으로만 구분한다. */
@@ -303,7 +499,7 @@ select, input {
 .playback-speed-btn.active {
   border-color: var(--accent);
   background: var(--accent);
-  color: #fff;
+  color: #16233a;
 }
 
 .playback-speed-btn:disabled {
@@ -314,7 +510,7 @@ select, input {
 /* 재생 중임을 판 옆에서 바로 알아보게 — 화면이 스스로 움직이는 동안의 유일한 설명이다. */
 .playback-bar.playing {
   border-color: var(--accent);
-  background: #fffbeb;
+  background: rgba(251, 191, 36, 0.12);
 }
 
 .playback-toggle {
@@ -338,7 +534,7 @@ select, input {
   padding: 2px 8px;
   border-radius: 999px;
   border: 1px solid var(--border);
-  background: #fff;
+  background: var(--raised-bg);
   color: var(--muted);
   font-size: 11px;
   /**
@@ -359,7 +555,7 @@ select, input {
 .playback-step.current {
   border-color: var(--accent);
   background: var(--accent);
-  color: #fff;
+  color: #16233a;
   opacity: 1;
 }
 
@@ -372,7 +568,7 @@ select, input {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--ink);
 }
 
 .playback-idle {
@@ -389,9 +585,17 @@ select, input {
   font-size: 11px;
 }
 
-/* 재생 중의 점수판은 "지금"이 아니라 "그 단계"의 숫자다 — 색으로 그 사실을 알린다. */
+/**
+ * 재생 중의 점수판은 "지금"이 아니라 "그 단계"의 숫자다 — 색으로 그 사실을 알린다.
+ * 점수 숫자 자체는 팀색을 유지해야 하므로(재생 중이라고 P1이 노랑이 되면 누구 점수인지 흐려진다)
+ * 칩 테두리에만 강조색을 얹는다.
+ */
 .scoreboard.replaying {
   color: var(--accent);
+}
+
+.scoreboard.replaying .score-chip {
+  border-color: var(--accent);
 }
 
 /* 점수가 한 자리에서 두 자리로 넘어갈 때 옆 글자가 밀리지 않게 — 재생 중에는 매 턴 끝에서 바뀐다. */
@@ -404,17 +608,31 @@ select, input {
  * 한 줄이었다 두 줄이었다 하면 아래의 부활 표시와 로그가 그때마다 밀리므로 **두 줄 자리를 늘
  * 잡아 둔다**. 재생 중이 아니어도 흔들림은 흔들림이다.
  */
+/* 기물을 골랐을 때만 내용이 차는 칸. 높이는 **내용과 무관하게 고정**이다 — 판이 남는 높이를
+   가져가므로 여기가 늘었다 줄었다 하면 그게 곧 판 크기의 출렁임이 된다.
+   판 위아래에 쌓이는 것 1px은 곧 판 크기 1px이라, 고정값도 최소로 잡는다. */
+.board-footer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  height: 60px;
+  overflow: hidden;
+}
+
 .board-hint {
   margin: 0;
   font-size: 13px;
   color: var(--muted);
-  background: #f8fafc;
-  border: 1px dashed var(--border);
+  background: var(--sunken-bg);
+  border: 1px dashed var(--border-strong);
   border-radius: 6px;
-  padding: 6px 10px;
-  min-height: 40px;
+  padding: 5px 10px;
+  min-height: 29px;
+  flex: 1 1 auto;
   display: flex;
   align-items: center;
+  overflow: hidden;
 }
 
 /* 보드 클릭 모드 토글 — 겹친 칸(이동이면서 공격 사거리인 칸)의 클릭 뜻을 정한다. */
@@ -433,7 +651,7 @@ select, input {
   padding: 4px 10px;
   border-radius: 999px;
   border: 1px solid var(--border);
-  background: #fff;
+  background: var(--raised-bg);
   color: var(--muted);
   cursor: pointer;
   font-size: 12px;
@@ -445,16 +663,16 @@ select, input {
 }
 
 .click-mode-btn.move.active {
-  border-color: #16a34a;
-  background: #dcfce7;
-  color: #166534;
+  border-color: var(--good);
+  background: rgba(74, 222, 128, 0.18);
+  color: var(--good);
   font-weight: 700;
 }
 
 .click-mode-btn.attack.active {
-  border-color: #ea580c;
-  background: #ffedd5;
-  color: #9a3412;
+  border-color: #fb923c;
+  background: rgba(251, 146, 60, 0.2);
+  color: #fdba74;
   font-weight: 700;
 }
 
@@ -477,6 +695,38 @@ select, input {
   gap: 16px;
 }
 
+/**
+ * 길어지는 것들(계획 패널 · 상태 목록 · 부활 · 해결 로그)이 전부 여기 모여 있다.
+ * **스크롤은 여기서만 일어난다** — 문서 전체가 늘어나면 판이 화면 밖으로 밀리지만,
+ * 이 열 안에서만 넘치면 판은 제자리에 있고 읽을 것만 굴러간다.
+ */
+.app-shell.playing .side-column {
+  flex: 1 1 400px;
+  /* 폭이 넘치게 남아도 글줄이 한없이 길어지면 오히려 읽기 나빠진다. */
+  max-width: 620px;
+  min-width: 0;
+  min-height: 0;
+  gap: 10px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* 스크롤바가 내용 위를 지나가지 않게 살짝 띄운다. */
+  padding-right: 4px;
+}
+
+/* 다크 배경에서 기본 스크롤바는 밝은 띠로 튄다 — 판보다 눈에 띄면 안 된다. */
+.app-shell.playing .side-column::-webkit-scrollbar {
+  width: 8px;
+}
+
+.app-shell.playing .side-column::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+}
+
+.app-shell.playing .side-column::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 .hud-column {
   display: flex;
   gap: 20px;
@@ -487,6 +737,49 @@ select, input {
   display: flex;
   gap: 20px;
   flex-wrap: wrap;
+}
+
+/* 옆 열이 400px로 좁아졌으므로 두 패널을 나란히 놓을 수 없다 — 위아래로 쌓는다. */
+.app-shell.playing .action-panels,
+.app-shell.playing .hud-column {
+  flex-direction: column;
+  gap: 10px;
+}
+
+/**
+ * **좁거나 낮은 화면에서는 높이 고정을 포기한다.** 옆 열 최소 폭(약 340px)과 판이 알아볼 수
+ * 있는 최소 크기를 같은 줄에 둘 수 없게 되는 지점이 있고, 거기서 억지로 한 화면에 밀어 넣으면
+ * 판이 손톱만 해진다. 그럴 땐 예전처럼 세로로 흐르게 두는 편이 낫다 — 스크롤은 불편이지만
+ * 안 보이는 판은 못 쓰는 것이다.
+ */
+@media (max-width: 1080px), (max-height: 620px) {
+  .app-shell.playing {
+    height: auto;
+    overflow: visible;
+    padding: 16px 20px 48px;
+  }
+
+  .app-shell.playing .main-layout {
+    flex-wrap: wrap;
+  }
+
+  .app-shell.playing .board-column {
+    flex: 0 0 auto;
+  }
+
+  .app-shell.playing .side-column {
+    flex: 1 1 360px;
+    min-width: 340px;
+    overflow: visible;
+  }
+
+  .app-shell.playing .board-svg {
+    flex: none;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: none;
+  }
 }
 
 /* ---------- Scoreboard ---------- */
@@ -503,9 +796,70 @@ select, input {
   color: var(--muted);
 }
 
-.scoreboard .score-p1 { color: var(--p1); font-weight: 700; }
-.scoreboard .score-p2 { color: var(--p2); font-weight: 700; }
-.scoreboard .win-score { color: var(--muted); }
+/**
+ * 점수 칩. 팀색은 **테두리와 숫자**에만 쓰고 바탕은 옅은 틴트로 둔다 — 어두운 판에서 칩을
+ * 팀색으로 꽉 채우면 두 칩이 화면에서 가장 밝은 덩어리가 되어, 정작 봐야 할 판보다 먼저
+ * 눈에 들어온다. 점수는 판 다음이지 판보다 앞은 아니다.
+ */
+.scoreboard .score-chip {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 92px;
+  padding: 3px 9px 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--sunken-bg);
+}
+
+.scoreboard .score-chip-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.scoreboard .score-chip-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+/**
+ * `font-variant-numeric: tabular-nums`가 핵심이다. 점수는 매 턴 바뀌는데 숫자 폭이 제각각이면
+ * 칩이 1→10에서 넓어지면서 그 오른쪽이 통째로 밀린다 — 판 위 상단 줄이 흔들리는 셈이다.
+ */
+.scoreboard .score-chip-value {
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.scoreboard .score-chip-track {
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.scoreboard .score-chip-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  /* 점수는 한 번에 1~2점씩 오른다. 막대가 순간이동하면 「올랐다」는 사실 자체를 놓친다. */
+  transition: width 320ms ease-out;
+}
+
+.scoreboard .score-p1 { border-color: var(--p1-line); }
+.scoreboard .score-p1 .score-chip-value { color: var(--p1); }
+.scoreboard .score-p1 .score-chip-fill { background: var(--p1); }
+.scoreboard .score-p2 { border-color: var(--p2-line); }
+.scoreboard .score-p2 .score-chip-value { color: var(--p2); }
+.scoreboard .score-p2 .score-chip-fill { background: var(--p2); }
+
+.scoreboard .win-score { color: var(--faint); font-size: 12px; }
 .scoreboard .winner { font-weight: 700; color: var(--accent); }
 
 /* ---------- Action panel / unit rows ---------- */
@@ -556,26 +910,41 @@ select, input {
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  background: #fff;
+  background: var(--panel-bg);
   border: none;
   border-radius: 0;
   text-align: left;
 }
 
+.unit-row-header:hover {
+  background: var(--raised-bg);
+}
+
+/* 지금 만지고 있는 줄. 배경만 바꾸면 어두운 판에서는 옆 줄과 거의 같아 보여, 왼쪽에 밝은 띠를
+   같이 세운다 — 색약이어도 위치로 읽힌다. */
 .unit-row.selected .unit-row-header {
-  background: #fffbeb;
+  background: var(--accent-bg);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
-.unit-role-dot {
-  width: 12px;
-  height: 12px;
+/**
+ * 목록의 기물 배지. 예전 `.unit-role-dot`(역할만 알려 주는 회색 도형)을 대신한다 — 그 도형은
+ * "탱커다"까지만 말했고 **어느 탱커인지**는 이름을 읽어야 알았다. 지금은 판 위 토큰과 같은
+ * 그림기호가 들어간다(components/unitGlyphs.tsx).
+ *
+ * 색은 `currentColor`라 글자색을 따라간다 — 잠긴 항목·선택된 항목에서 배지만 밝게 남는 일이 없다.
+ */
+.unit-mark {
   flex: 0 0 auto;
-  border-radius: 2px;
+  color: var(--muted);
+  display: block;
 }
-
-.unit-role-dot.role-tank { background: #475569; border-radius: 2px; }
-.unit-role-dot.role-dealer { background: #475569; clip-path: polygon(50% 0%, 0% 100%, 100% 100%); }
-.unit-role-dot.role-support { background: #475569; border-radius: 50%; }
+/* 골라 둔 항목·지금 보고 있는 줄에서는 배지도 같이 살아난다. */
+.draft-column button:not(:disabled):hover .unit-mark,
+.unit-row.selected .unit-mark,
+.draft-readonly-item .unit-mark {
+  color: var(--text);
+}
 
 .unit-name {
   font-weight: 600;
@@ -586,7 +955,7 @@ select, input {
 .hp-bar {
   width: 60px;
   height: 6px;
-  background: #e2e8f0;
+  background: var(--border-strong);
   border-radius: 4px;
   overflow: hidden;
   flex: 0 0 auto;
@@ -603,28 +972,41 @@ select, input {
   white-space: nowrap;
 }
 
+/**
+ * 상태 배지.
+ *
+ * 예전에는 **진한 색을 꽉 채우고 흰 글씨**를 얹었다. 밝은 패널 위에서는 그게 맞았지만 어두운
+ * 패널 위에서는 배지 하나하나가 작은 전조등이 돼, 기물 이름·체력보다 배지가 먼저 눈에 들어온다.
+ * 배지는 **덧붙는 정보**지 주인공이 아니다. 그래서 어두운 색조 배경 + 밝은 글씨로 뒤집었다 —
+ * 색으로 종류를 구분하는 기능은 그대로면서 밝기 순위가 제자리를 찾는다.
+ */
 .badge {
   font-size: 10px;
   padding: 2px 6px;
   border-radius: 999px;
   white-space: nowrap;
-  color: #fff;
+  font-weight: 600;
+  border: 1px solid transparent;
 }
 
-.badge-root { background: #dc2626; }
-/* 행동불가는 구속보다 무거운 제약이라 더 어둡게 — 색만 보고도 강도가 구별돼야 한다. */
-.badge-stun { background: #7f1d1d; }
-.badge-barrier { background: #2563eb; }
-.badge-attackmode { background: #7c3aed; }
-.badge-shield { background: #0284c7; }
+.badge-root { background: rgba(248, 113, 113, 0.16); color: #fca5a5; border-color: rgba(248, 113, 113, 0.4); }
+/* 행동불가는 구속보다 무거운 제약이다 — 유일하게 **꽉 채워** 무게를 표시한다. */
+.badge-stun { background: #b91c1c; color: #fff; border-color: #ef4444; }
+.badge-barrier { background: rgba(91, 156, 255, 0.16); color: #93c5fd; border-color: rgba(91, 156, 255, 0.4); }
+.badge-attackmode { background: rgba(167, 139, 250, 0.16); color: #c4b5fd; border-color: rgba(167, 139, 250, 0.4); }
+.badge-shield { background: rgba(56, 189, 248, 0.16); color: #7dd3fc; border-color: rgba(56, 189, 248, 0.4); }
+/* 차단막은 판 위 오버레이(Board.tsx AIM_STYLE.veil)와 같은 보라색이어야 배지와 칸이 같은 것으로 읽힌다. */
+.badge-veil { background: rgba(192, 132, 252, 0.16); color: var(--veil); border-color: rgba(192, 132, 252, 0.42); }
+/* 가속은 상태이상이 아니라 이 기물의 눈금이라, 제어/버프 계열과 겹치지 않는 청록으로 뺀다. */
+.badge-pace { background: rgba(34, 211, 238, 0.16); color: var(--pace); border-color: rgba(34, 211, 238, 0.4); }
 /* 조준 보조(공격력 증가)는 방어 계열(파랑)·제어 계열(빨강)과 구분되게 공격 계열 주황으로. */
-.badge-buff { background: #ea580c; }
+.badge-buff { background: rgba(251, 146, 60, 0.16); color: #fdba74; border-color: rgba(251, 146, 60, 0.4); }
 /* 시간 역행 관련 표시는 보드의 경로/기준점 색(REWIND_COLOR)과 같은 보라색으로 통일한다. */
-.badge-rewind { background: #7c3aed; }
+.badge-rewind { background: rgba(167, 139, 250, 0.16); color: #a78bfa; border-color: rgba(167, 139, 250, 0.4); }
 /* 탄창은 상태(켜짐/꺼짐)가 아니라 **소모되는 자원**이라 색으로 성격을 갈라 놓는다 —
    남아 있을 때는 중립(회색), 다 쓰고 쉬는 중일 때만 경고색으로 바뀐다. */
-.badge-ammo { background: #475569; }
-.badge-ammo.resting { background: #b45309; }
+.badge-ammo { background: rgba(146, 163, 191, 0.14); color: var(--muted); border-color: var(--border-strong); }
+.badge-ammo.resting { background: rgba(251, 191, 36, 0.16); color: #fcd34d; border-color: rgba(251, 191, 36, 0.4); }
 
 /* 회복 사정권 — 도움말 그림의 회복 색(--mark-heal)과 같은 값을 써야 "도움말에서 본 그 표시"가
    대전 화면에서도 같은 뜻으로 읽힌다. 칠이 아니라 테두리인 건 클릭 대상이 아니기 때문이다. */
@@ -638,7 +1020,7 @@ select, input {
   margin-left: auto;
   font-size: 12px;
   color: var(--ink);
-  background: #f1f5f9;
+  background: var(--raised-bg);
   border-radius: 999px;
   padding: 3px 10px;
   white-space: nowrap;
@@ -652,7 +1034,7 @@ select, input {
 
 .unit-row-editor {
   padding: 10px 12px;
-  background: #f8fafc;
+  background: var(--sunken-bg);
   border-top: 1px solid var(--border);
 }
 
@@ -700,7 +1082,7 @@ select, input {
   flex-direction: column;
   gap: 4px;
   padding: 8px 10px;
-  background: #fff;
+  background: var(--raised-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
 }
@@ -714,8 +1096,8 @@ select, input {
 
 /* 기본 이동력을 넘어선 스텝 = 기술로 얻은 추가 이동 칸 */
 .move-step-row.extra {
-  background: #f5f3ff;
-  border-left: 3px solid #7c3aed;
+  background: rgba(167, 139, 250, 0.13);
+  border-left: 3px solid #a78bfa;
   padding-left: 5px;
   margin-left: -8px;
 }
@@ -731,37 +1113,37 @@ select, input {
 }
 
 .move-segment-head.extra {
-  color: #6d28d9;
-  border-bottom-color: #ddd6fe;
+  color: #c4b5fd;
+  border-bottom-color: rgba(167, 139, 250, 0.4);
 }
 
 /* 구간 도착점 표시: 이 칸이 기본 이동/기술 n회의 최종 위치 */
 .move-arrival {
   font-size: 11px;
-  color: #334155;
-  background: #f1f5f9;
+  color: var(--ink);
+  background: var(--raised-bg);
   border-radius: 999px;
   padding: 2px 8px;
   white-space: nowrap;
 }
 
 .move-arrival.extra {
-  color: #6d28d9;
-  background: #f5f3ff;
+  color: #c4b5fd;
+  background: rgba(167, 139, 250, 0.13);
 }
 
 /* 장애물·유닛에 막혀 실제로는 실행되지 않는 스텝 */
 .move-arrival.blocked {
-  color: #b91c1c;
-  background: #fef2f2;
+  color: #fca5a5;
+  background: rgba(255, 107, 107, 0.12);
 }
 
 /* 추가 이동은 칸수를 고를 수 없다 — select 대신 확정된 칸수를 보여준다 */
 .move-fixed-length {
   font-size: 11px;
-  color: #6d28d9;
-  background: #f5f3ff;
-  border: 1px solid #ddd6fe;
+  color: #c4b5fd;
+  background: rgba(167, 139, 250, 0.13);
+  border: 1px solid rgba(167, 139, 250, 0.4);
   border-radius: 6px;
   padding: 3px 8px;
   white-space: nowrap;
@@ -777,9 +1159,9 @@ select, input {
 .btn-step-add {
   align-self: flex-start;
   font-size: 12px;
-  color: #15803d;
-  border: 1px dashed #86efac;
-  background: #f0fdf4;
+  color: var(--good);
+  border: 1px dashed rgba(74, 222, 128, 0.45);
+  background: rgba(74, 222, 128, 0.12);
   border-radius: 6px;
   padding: 3px 10px;
 }
@@ -789,20 +1171,20 @@ select, input {
 /* "기본 이동은 없고 기술 몫으로만 움직인다"는 규칙을 편집기 안에서 눈에 띄게 알려 주는 안내 블록 */
 .skillmove-note {
   padding: 6px 10px;
-  border: 1px solid #fed7aa;
+  border: 1px solid rgba(251, 146, 60, 0.42);
   border-radius: 8px;
-  background: #fff7ed;
-  color: #9a3412;
+  background: rgba(251, 146, 60, 0.12);
+  color: #fdba74;
   font-size: 12px;
   line-height: 1.5;
 }
 
 .log-skillmove {
-  color: #9a3412;
+  color: #fdba74;
 }
 
 .log-dash {
-  color: #b91c1c;
+  color: #fca5a5;
   font-weight: 600;
 }
 
@@ -812,10 +1194,10 @@ select, input {
 
 .dash-note {
   padding: 6px 10px;
-  border: 1px solid #fecaca;
+  border: 1px solid rgba(255, 107, 107, 0.42);
   border-radius: 8px;
-  background: #fef2f2;
-  color: #b91c1c;
+  background: rgba(255, 107, 107, 0.12);
+  color: #fca5a5;
   font-size: 12px;
   line-height: 1.5;
 }
@@ -827,14 +1209,14 @@ select, input {
   flex-direction: column;
   gap: 6px;
   padding: 8px 10px;
-  border: 1px solid #ddd6fe;
+  border: 1px solid rgba(167, 139, 250, 0.4);
   border-radius: 8px;
-  background: #faf5ff;
+  background: rgba(167, 139, 250, 0.1);
 }
 
 .rewind-panel.active {
-  border-color: #7c3aed;
-  box-shadow: 0 0 0 1px #7c3aed inset;
+  border-color: #a78bfa;
+  box-shadow: 0 0 0 1px #a78bfa inset;
 }
 
 .rewind-header {
@@ -847,12 +1229,12 @@ select, input {
 .rewind-title {
   font-size: 12px;
   font-weight: 700;
-  color: #6d28d9;
+  color: #c4b5fd;
 }
 
 .rewind-charges {
   font-size: 12px;
-  color: #6d28d9;
+  color: #c4b5fd;
   margin-left: auto;
 }
 
@@ -866,9 +1248,9 @@ select, input {
   margin: 0;
   font-size: 12px;
   line-height: 1.5;
-  color: #b45309;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
+  color: #fcd34d;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.4);
   border-radius: 6px;
   padding: 6px 8px;
 }
@@ -885,9 +1267,9 @@ select, input {
 }
 
 .btn-rewind-use {
-  background: #7c3aed;
+  background: #7c5cd6;
   color: #fff;
-  border-color: #7c3aed;
+  border-color: #a78bfa;
 }
 
 .btn-rewind-cancel {
@@ -895,7 +1277,7 @@ select, input {
 }
 
 .btn-rewind-normal {
-  color: #15803d;
+  color: var(--good);
 }
 
 .rewind-buttons button:disabled {
@@ -928,7 +1310,7 @@ select, input {
 
 .unit-status-list td {
   padding: 3px 6px 3px 0;
-  border-top: 1px solid #f1f5f9;
+  border-top: 1px solid var(--raised-bg);
 }
 
 .respawn-tracker, .resolution-log {
@@ -947,8 +1329,18 @@ select, input {
 }
 
 .resolution-log .log-rewind {
-  color: #6d28d9;
+  color: #c4b5fd;
   font-weight: 600;
+}
+
+/* 차단막 계열은 판 위 오버레이·배지와 같은 보라색으로 묶는다. */
+.resolution-log .log-block {
+  color: var(--veil);
+  font-weight: 600;
+}
+
+.resolution-log .log-pace {
+  color: var(--pace);
 }
 
 /* ---------- Draft / placement ---------- */
@@ -956,6 +1348,30 @@ select, input {
 .draft-columns, .placement-layout {
   display: flex;
   gap: 24px;
+}
+
+/**
+ * 배치 화면의 높이 사슬. `.app-shell.playing > *`가 전부 `flex: 0 0 auto`라, 이 한 줄이 없으면
+ * 배치 레이아웃이 자기 내용만큼만 차지하고 판은 남는 높이를 못 받는다 — 클래스만 붙이고
+ * 여기를 안 열어 주면 화면에 맞추기가 조용히 아무것도 안 한 것처럼 보인다.
+ * 사슬 위의 모든 항목에 `min-height: 0`이 필요한 이유는 board-svg 쪽 주석에 적어 뒀다.
+ */
+.app-shell.playing > .placement-layout {
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: stretch;
+  gap: 16px;
+}
+
+.app-shell.playing .placement-layout h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+/* 슬롯 목록은 판 옆에서 화면보다 길어질 수 있다(6대6이면 12줄) — 판을 밀어내는 대신 여기가 구른다. */
+.app-shell.playing .placement-layout > div:last-child {
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .draft-column {
@@ -975,9 +1391,87 @@ select, input {
   gap: 4px;
 }
 
+/**
+ * **길어지는 건 목록뿐이다.** 기물이 12종일 때는 드래프트 화면이 통째로 900px 안에 들어왔다.
+ * 18종이 되자 문서가 1051px로 늘었고, 하필 화면 밖으로 밀린 것이 **「배치 단계로」 버튼**이었다 —
+ * 5기물을 다 고른 사람이 다음으로 갈 길을 스크롤해서 찾아야 한다. 기물을 더 늘리면 더 밀린다.
+ *
+ * 셸에 `playing`을 붙여 높이를 못 박는 길도 있지만 그건 안 쓴다. 드래프트는 원래 흘러도 되는
+ * 화면이고 App.tsx에 그렇게 적어 뒀다 — 판을 보는 화면이 아니라 목록을 읽는 화면이니까.
+ * 대신 **길어지는 부분만** 자기 안에서 구르게 해서, 스크롤하는 동안에도 위의 「0/5」와 아래의
+ * 확정 버튼이 화면에 남게 한다. 고르는 사람이 계속 봐야 하는 건 정확히 그 둘이다.
+ *
+ * 380px은 목록 위(머리말·규칙 설명·열 머리 = 211px)와 아래(선택됨 줄·경고·확정 버튼·여백 =
+ * 169px)를 더한 값이다. 어긋나도 조용히 깨지지 않는다 — 조금 크면 문서가 예전처럼 스크롤될
+ * 뿐이고, 조금 작으면 목록이 필요보다 짧아질 뿐이다.
+ */
+.draft-column ul {
+  max-height: calc(100dvh - 380px);
+  overflow-y: auto;
+}
+
+/* 낮은 화면에서는 남는 높이가 목록 몇 줄도 안 된다. 판에서와 같은 판단으로(위 미디어 쿼리)
+   높이 맞추기를 포기하고 문서가 흐르게 둔다 — 두 줄짜리 스크롤 상자보다 그게 낫다. */
+@media (max-height: 620px) {
+  .draft-column ul {
+    max-height: none;
+    overflow-y: visible;
+  }
+}
+
 .draft-column button {
   width: 100%;
   text-align: left;
+}
+
+/* 도형 · 역할글자 · 이름 · 담은 수. 이름만 남는 폭을 먹고 나머지는 자기 크기를 지킨다 —
+   그래야 열 두 개가 나란히 서도 도형이 세로로 한 줄에 정렬된다. */
+.draft-column li button,
+.draft-readonly-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.draft-unit-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draft-role-tag {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--faint);
+  letter-spacing: 0.04em;
+  /* 세 역할 글자 수가 모두 두 자라 폭을 못 박아도 잘리지 않는다 — 이름의 시작점이 줄마다 같아진다. */
+  min-width: 24px;
+}
+
+/* 담은 수는 화면에서 「내가 한 일」이므로 강조색을 쓴다 — 나머지 줄은 전부 중립색이라 눈에 띈다. */
+.draft-pick-count {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+/**
+ * 배치 화면에서 **지금 어느 슬롯을 놓는 중인지**. 판 위 선택 고리(노랑)와 계획 패널의
+ * 선택 행이 이미 같은 강조색을 쓰므로 여기도 같은 토큰을 쓴다 — 화면을 옮겨 다녀도
+ * 「지금 고른 것」의 색이 한 가지여야 눈이 그걸 찾는 법을 다시 배우지 않는다.
+ * 왼쪽 굵은 선까지 같이 넣는 건, 목록에서는 배경 틴트만으로는 한 줄이 도드라지지 않아서다.
+ */
+.draft-column button.active {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--text);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 /* ---------- 모드 선택 메뉴 / 배너 ---------- */
@@ -1142,7 +1636,7 @@ select, input {
 .mode-banner-alert {
   margin-left: auto;
   margin-right: 12px;
-  color: var(--danger, #dc2626);
+  color: var(--danger, var(--danger));
   font-weight: 600;
 }
 
@@ -1158,7 +1652,7 @@ select, input {
 
 .draft-column.read-only {
   opacity: 0.85;
-  background: #f8fafc;
+  background: var(--sunken-bg);
 }
 
 .draft-readonly-item {
@@ -1178,7 +1672,7 @@ select, input {
   margin: 12px 0 0;
   font-size: 13px;
   font-weight: 600;
-  color: var(--danger, #dc2626);
+  color: var(--danger, var(--danger));
 }
 
 .draft-quota {
@@ -1240,8 +1734,8 @@ select, input {
 .plan-progress {
   padding: 3px 8px;
   border-radius: 999px;
-  background: #e2e8f0;
-  color: #475569;
+  background: var(--border-strong);
+  color: var(--muted);
   font-size: 12px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -1251,8 +1745,8 @@ select, input {
 /* 한 기물도 지정하지 않은 채 해결하려는 순간만 눈에 띄게 한다. 「대기」도 선택이라 막지는 않으므로
    빨강(오류)이 아니라 주황(주의)이다 — 색이 "이건 못 누른다"로 읽히면 안 된다. */
 .plan-progress.idle {
-  background: #ffedd5;
-  color: #9a3412;
+  background: rgba(251, 146, 60, 0.2);
+  color: #fdba74;
 }
 
 /* ---------- 도움말(게임 방법) ---------- */
@@ -1279,7 +1773,7 @@ select, input {
   position: fixed;
   inset: 0;
   z-index: 50;
-  background: rgba(15, 23, 42, 0.55);
+  background: rgba(3, 6, 14, 0.72);
   display: flex;
   justify-content: center;
   padding: 24px 16px;
@@ -1293,7 +1787,7 @@ select, input {
   width: 100%;
   height: fit-content;
   padding: 20px 24px 24px;
-  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.3);
+  box-shadow: var(--shadow-lg);
 }
 
 .guide-head {
@@ -1316,7 +1810,7 @@ select, input {
 /* 닫기 버튼의 Esc 표시는 밝은 바탕 위에 얹히므로 버튼 안 단축키와 명암이 반대다. */
 .guide-head .key-hint,
 .guide-controls .key-hint {
-  background: rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.07);
   color: var(--muted);
   margin-left: 4px;
 }
@@ -1388,7 +1882,7 @@ select, input {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #f8fafc;
+  background: var(--sunken-bg);
 }
 
 .guide-phase-no {
@@ -1493,7 +1987,7 @@ select, input {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px;
-  background: #fff;
+  background: var(--raised-bg);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1517,13 +2011,13 @@ select, input {
   font-weight: 700;
   padding: 1px 6px;
   border-radius: 4px;
-  background: #f1f5f9;
+  background: var(--raised-bg);
   color: var(--muted);
 }
 
-.guide-role-tank { background: #e0e7ff; color: #3730a3; }
-.guide-role-dealer { background: #fee2e2; color: #991b1b; }
-.guide-role-support { background: #d1fae5; color: #065f46; }
+.guide-role-tank { background: rgba(167, 139, 250, 0.2); color: #c7d2fe; }
+.guide-role-dealer { background: rgba(255, 107, 107, 0.18); color: #fca5a5; }
+.guide-role-support { background: rgba(74, 222, 128, 0.18); color: var(--good); }
 
 .guide-stats {
   display: grid;
@@ -1606,17 +2100,17 @@ select, input {
 .mini-board {
   border: 1px solid var(--border);
   border-radius: 4px;
-  background: #fff;
+  background: var(--raised-bg);
   flex: none;
 }
 
 .mini-cell {
-  fill: #fff;
+  fill: var(--raised-bg);
   stroke: var(--border);
   stroke-width: 1;
 }
 
-.mini-obstacle { fill: #94a3b8; }
+.mini-obstacle { fill: var(--faint); }
 .mini-capture { fill: rgba(245, 158, 11, 0.3); }
 .mini-start-p1 { fill: rgba(37, 99, 235, 0.18); }
 .mini-start-p2 { fill: rgba(220, 38, 38, 0.18); }
@@ -1633,7 +2127,7 @@ select, input {
   /* 배너는 space-between이라 가운데 항목이 늘어나 버린다 — 이름 길이만큼만 차지하게 고정한다. */
   flex: 0 0 auto;
   font-weight: 600;
-  color: var(--text, #0f172a);
+  color: var(--text, var(--ink));
 }
 
 /* 편성 규칙 고르는 칸도 "카드 두 장 중 하나를 고른다"는 같은 모양이라 맵 선택 스타일을 같이 쓴다. */
@@ -1670,8 +2164,8 @@ select, input {
 /* 고른 맵은 테두리만으로는 잘 안 보인다 — 배경까지 바꿔 "이걸로 시작된다"를 분명히 한다. */
 .map-choice.active,
 .rule-choice.active {
-  border-color: #2563eb;
-  background: #eff6ff;
+  border-color: var(--p1);
+  background: rgba(91, 156, 255, 0.13);
 }
 
 .map-maker {
@@ -1739,8 +2233,8 @@ select, input {
 }
 
 .palette-btn.active {
-  border-color: #2563eb;
-  box-shadow: inset 0 0 0 1px #2563eb;
+  border-color: var(--p1);
+  box-shadow: inset 0 0 0 1px var(--p1);
 }
 
 .palette-swatch {
@@ -1775,15 +2269,15 @@ select, input {
 }
 
 .map-errors {
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  color: #b91c1c;
+  background: rgba(255, 107, 107, 0.12);
+  border: 1px solid rgba(255, 107, 107, 0.42);
+  color: #fca5a5;
 }
 
 .map-warnings {
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  color: #92400e;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  color: #fcd34d;
 }
 
 .map-notice {
@@ -1821,8 +2315,8 @@ select, input {
 }
 
 .map-list li.active .map-list-name {
-  border-color: #2563eb;
-  background: #eff6ff;
+  border-color: var(--p1);
+  background: rgba(91, 156, 255, 0.13);
 }
 
 .map-list-name {

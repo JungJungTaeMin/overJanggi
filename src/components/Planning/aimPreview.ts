@@ -18,8 +18,8 @@ import type { AttackOption } from './actionGeometry';
  */
 export interface AimMark {
   position: Position;
-  /** hit=때린다 / ally=아군이 사선을 막는다 / barrier=방벽이 지운다. */
-  kind: 'hit' | 'ally' | 'barrier';
+  /** hit=때린다 / ally=아군이 사선을 막는다 / barrier=방벽이 지운다 / veil=차단막이 그 칸에서 지운다. */
+  kind: 'hit' | 'ally' | 'barrier' | 'veil';
   /** 예상 피해(측면 교란 보너스 포함). hit일 때만. */
   damage?: number;
   direction: Direction;
@@ -60,6 +60,10 @@ export function computeAimMarks(
       marks.push({ position: result.blocker.position, kind: 'ally', direction: option.direction });
     } else if (result.kind === 'barrier' && result.blocker.position) {
       marks.push({ position: result.blocker.position, kind: 'barrier', direction: option.direction });
+    } else if (result.kind === 'veil') {
+      // 방벽과 달리 표식을 **막힌 칸**에 찍는다 — 지운 것은 러너가 서 있는 자리가 아니라
+      // 탄이 처음 닿은 덮인 칸이고, 사람이 사선을 옮길 때 봐야 하는 것도 그 칸이다.
+      marks.push({ position: result.at, kind: 'veil', direction: option.direction });
     }
     // empty(사거리 안에 아무도 없음)는 표시하지 않는다 — 빈 사선마다 표식을 찍으면 여덟 방향이
     // 전부 칠해져서, 정작 무언가 맞는 한 방향이 소음에 묻힌다.
@@ -73,10 +77,13 @@ export function aimSummary(marks: AimMark[]): string {
   const hits = marks.filter((m) => m.kind === 'hit');
   if (hits.length === 0) {
     const ally = marks.some((m) => m.kind === 'ally');
+    const veil = marks.some((m) => m.kind === 'veil');
     const barrier = marks.some((m) => m.kind === 'barrier');
+    if (veil && !ally && !barrier) return '차단막이 사선을 지웁니다 — 덮이지 않은 칸으로 각을 옮기세요.';
     if (ally && barrier) return '아군이 사선을 막거나 방벽에 막힙니다 — 비켜서거나 방벽부터 걷어내세요.';
     if (ally) return '아군이 사선에 서 있습니다 — 비키게 하면 닿습니다.';
-    return '방벽에 막힙니다 — 피해가 들어가지 않습니다.';
+    if (barrier) return '방벽에 막힙니다 — 피해가 들어가지 않습니다.';
+    return '차단막이 사선을 지웁니다 — 덮이지 않은 칸으로 각을 옮기세요.';
   }
   const best = Math.max(...hits.map((m) => m.damage ?? 0));
   return `조준되는 대상 ${hits.length}곳 — 최대 ${best} 피해.`;
