@@ -262,7 +262,7 @@ export const unitTypes: UnitTypeDef[] = [
     diagonalMove: false,
     canAttack: true,
     skills: [],
-    attackShots: 2,
+    attackShots: 3,
     attackRestTurns: 1,
   },
   {
@@ -386,7 +386,7 @@ export const unitTypes: UnitTypeDef[] = [
     role: 'dealer',
     moveSpeed: 2,
     hpLv: 4,
-    attack: 5,
+    attack: 4,
     attackShape: { kind: 'line', range: 3, axis: 'diagonal' },
     diagonalMove: true,
     canAttack: true,
@@ -433,7 +433,7 @@ export const unitTypes: UnitTypeDef[] = [
      * 문턱을 payload에 둔 이유: 조건 조정을 코드 수정 없이 돌릴 수 있어야 하고, 해결·화면·AI가
      * 같은 문턱을 봐야 한다(engine/flankBonus.ts 한 곳에서만 읽는다).
      */
-    passive: { id: 'dealer4_flank_bonus', description: '다른 적 2명 이상과 인접한 대상에게 +5 추가 피해', payload: { bonusDamage: 5, minAdjacentAllies: 2 } },
+    passive: { id: 'dealer4_flank_bonus', description: '다른 적 2명 이상과 인접한 대상에게 +3 추가 피해', payload: { bonusDamage: 3, minAdjacentAllies: 2 } },
   },
   /**
    * **관통 사격형** — 사선 위의 적을 **전부** 때린다(기획서에 없는 추가 기물).
@@ -532,7 +532,7 @@ export const unitTypes: UnitTypeDef[] = [
         effectCategory: 'heal',
         gate: { type: 'auto' },
         targeting: 'aoe',
-        payload: { radius: 2, healAmount: 3 },
+        payload: { radius: 2, healAmount: 2 },
       },
     ],
     // 턴 종료 시 자동 회복, 해당 턴에 힐을 사용했다면 자동회복량 2배

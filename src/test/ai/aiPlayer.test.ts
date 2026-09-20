@@ -121,6 +121,74 @@ describe('AI — 명백한 상황에서의 판단', () => {
     expect(plan.skillUse?.target).toBe(wounded.instanceId);
   });
 
+  /**
+   * 이 프로젝트에는 **엔진에는 있는데 AI가 영영 안 쓰는 기술**이 한 번 있었다(dealer4 자리교체).
+   * 사람이 쓰면 동작하지만 후보 생성에 빠져 있어서, 밸런스 수치가 통째로 그 기술이 없는 셈 친
+   * 값이었다 — 한참 뒤에야 알아챘다(지금은 아래 두 테스트가 그 기술을 잠그고 있다).
+   * 밀치기에서 같은 일이 벌어지면 이 기물은 AI전에서 "공격 2짜리 탱커"가 되고, 승률을 재도
+   * 그 숫자가 무엇을 잰 것인지 알 수 없게 된다. 그래서 **고르는지**를 직접 잠근다.
+   */
+  it('tank4는 점령지에 선 적을 밖으로 밀어내는 쪽을 고른다', () => {
+    const state = emptyState(testBoard({ captureZone: [{ x: 4, y: 4 }] }));
+    const shover = addUnit(state, 'tank4', 'p2', { x: 4, y: 6 });
+    const holder = addUnit(state, 'tank1', 'p1', { x: 4, y: 4 });
+    // 점령지 밖에도 적을 하나 둔다 — 사거리 안이지만 밀어 봐야 점수가 안 바뀐다.
+    // 둘 중 **점령 중인 쪽**을 골라야 이 기물이 제 일을 하는 것이다.
+    addUnit(state, 'tank1', 'p1', { x: 6, y: 6 });
+
+    const plan = planForUnit(state, shover, HARD, rng());
+    expect(plan.skillUse?.skillId).toBe('tank4_shove');
+    expect(plan.skillUse?.target).toBe(holder.instanceId);
+  });
+
+  it('점령지 안으로 밀어 넣는 자해는 확정 피해가 딸려 와도 하지 않는다', () => {
+    // 함정을 일부러 만든 배치다: 밀면 적이 벽에 부딪혀 **확정 피해**를 받는데, 멈추는 칸이
+    // 하필 점령지다. 피해만 보고 값을 매기면 AI가 제 손으로 적을 점령지에 앉힌다 —
+    // 점수판이 걸린 수는 피해 몇 점과 바꿀 수 없다는 것을 여기서 잠근다.
+    const state = emptyState(testBoard({ captureZone: [{ x: 4, y: 5 }], obstacles: [{ x: 4, y: 4 }] }));
+    const shover = addUnit(state, 'tank4', 'p2', { x: 4, y: 8 });
+    const enemy = addUnit(state, 'tank1', 'p1', { x: 4, y: 6 });
+
+    const plan = planForUnit(state, shover, HARD, rng());
+    const shoving = plan.skillUse?.skillId === 'tank4_shove' && plan.skillUse?.target === enemy.instanceId;
+    expect(shoving).toBe(false);
+  });
+
+  /**
+   * 자리 교체는 **점령 거리로는 제로섬**이다 — 한 칸 앞으로 가는 쪽이 있으면 꼭 한 칸 뒤로
+   * 가는 쪽이 있다. 그래서 이 기술의 값은 거리가 아니라 **누가 위험을 먹는가**에서만 나온다.
+   * 아래 두 테스트가 그 양쪽 끝이다: 바꿀 이유가 있을 때 바꾸는가, 없을 때 가만히 있는가.
+   */
+  it('dealer4는 점령지에서 죽어 가는 자기 대신 탱커를 들여보낸다', () => {
+    const state = emptyState(testBoard({ captureZone: [{ x: 4, y: 4 }] }));
+    const flanker = addUnit(state, 'dealer4', 'p2', { x: 4, y: 4 });
+    flanker.currentHp = 1;
+    const tank = addUnit(state, 'tank1', 'p2', { x: 5, y: 5 });
+    /**
+     * 위협이 **점령지 칸에만** 닿아야 한다. 이동 1 · 직선 사거리 3짜리 적을 세 칸 위에 두면
+     * 점령지 칸은 위협 3, 탱커가 선 칸은 0이다(발이 빠른 적을 쓰면 두 칸 다 똑같이 위협받아서
+     * 교체 이득이 **정확히 0으로 상쇄된다** — 실제로 처음 짠 배치가 그랬다).
+     * 세로로 선 적이라 대각선으로만 쏘는 dealer4는 맞받아칠 수도 없다.
+     */
+    addUnit(state, 'tank1', 'p1', { x: 4, y: 1 });
+
+    const plan = planForUnit(state, flanker, HARD, rng());
+    expect(plan.skillUse?.skillId).toBe('dealer4_swap');
+    expect(plan.skillUse?.target).toBe(tank.instanceId);
+  });
+
+  it('아군을 뒤로 물리기만 하는 교체는 하지 않는다', () => {
+    // 아무도 위협받지 않고 둘 다 멀쩡하다. 이때 교체는 앞선 아군을 뒤로 보내고 자기가 그 자리를
+    // 차지하는 것뿐이라 팀 전체로는 0이다. 아군 쪽 손해를 조금이라도 깎아서 재면(예전에 전송에서
+    // 베껴 온 0.8배) 이 수가 **늘 남는 장사**로 보여서, dealer4가 매 턴 아군을 밀어내며 혼자 뛴다.
+    const state = emptyState(testBoard({ captureZone: [{ x: 4, y: 4 }] }));
+    const flanker = addUnit(state, 'dealer4', 'p2', { x: 7, y: 7 });
+    addUnit(state, 'tank1', 'p2', { x: 6, y: 6 });
+
+    const plan = planForUnit(state, flanker, HARD, rng());
+    expect(plan.skillUse?.skillId).not.toBe('dealer4_swap');
+  });
+
   it('쉬움은 기술을 전혀 쓰지 않는다', () => {
     const state = emptyState();
     const tank2 = addUnit(state, 'tank2', 'p2', { x: 4, y: 0 });
@@ -269,11 +337,11 @@ describe('AI — 위협 계산(threatAt)', () => {
   it('대각선 이동이 가능한 기물은 조준 오차를 걸음당 2씩 줄인다', () => {
     const state = emptyState();
     const victim = addUnit(state, 'tank1', 'p1', { x: 0, y: 0 });
-    addUnit(state, 'dealer4', 'p2', { x: 4, y: 0 }); // 대각선 3 · 이동 2 · 공격력 5 · 대각 이동 가능
+    addUnit(state, 'dealer4', 'p2', { x: 4, y: 0 }); // 대각선 사거리 3 · 이동 2 · 대각 이동 가능
 
     // (4,3)은 dealer4의 대각선 위가 아니다. 직교로만 움직이면 정렬에 3칸이 들어 이동력 2로는
     // 못 맞추지만, 대각 이동이면 (3,1)→(2,1) 두 걸음으로 대각 거리 2의 사선에 오른다.
-    expect(threatAt(state, victim, { x: 4, y: 3 })).toBe(5);
+    expect(threatAt(state, victim, { x: 4, y: 3 })).toBe(ATTACK('dealer4'));
     // 너무 멀면 두 걸음으로는 안 된다.
     expect(threatAt(state, victim, { x: 4, y: 7 })).toBe(0);
   });

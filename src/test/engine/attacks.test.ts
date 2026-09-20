@@ -6,6 +6,14 @@ import { ammoState } from '../../engine/unitStats';
 import { flankBonusFor } from '../../engine/flankBonus';
 import { getUnitType } from '../../data/unitTypes';
 
+/**
+ * 탄창 크기는 **밸런스 손잡이**다(실제로 2 → 3으로 한 번 올렸다). 여기서 잠그는 것은 "2발"이
+ * 아니라 **탄창을 비우면 정확히 한 턴 쉬고 다시 꽉 찬다**는 주기 자체이므로, 숫자는 손으로 적지
+ * 않고 데이터에서 읽는다 — 그러지 않으면 조정할 때마다 멀쩡한 테스트가 네 개씩 붉어진다.
+ */
+const MAGAZINE = getUnitType('dealer1').attackShots!;
+const REST = getUnitType('dealer1').attackRestTurns!;
+
 describe('attack resolution', () => {
   it('a line attack only hits the first enemy along the ray', () => {
     const state = emptyState();
@@ -107,8 +115,8 @@ describe('attack resolution', () => {
     expect(exposed.currentHp).toBe(Math.max(0, exposed.maxHp - 5));
   });
 
-  it('dealer1은 2발 쏘고 한 턴 쉰다 — 공격·공격·휴식이 반복된다', () => {
-    // 장거리 화력형의 제약은 "쏘면 3턴 못 쏜다"가 아니라 탄창식이다: 2발 연속 → 1턴 휴식 → 다시 2발.
+  it('dealer1은 탄창을 비울 때까지 연사하고 한 턴 쉰다 — 그 주기가 반복된다', () => {
+    // 장거리 화력형의 제약은 "쏘면 3턴 못 쏜다"가 아니라 탄창식이다: 연사 → 휴식 → 다시 연사.
     // 매 턴 같은 공격을 계획해도 쉬는 턴은 sanitizePlan이 걸러내므로(validation.ts) 피해가 0이 된다.
     const state = emptyState();
     const sniper = addUnit(state, 'dealer1', 'p1', { x: 0, y: 0 });
@@ -117,7 +125,9 @@ describe('attack resolution', () => {
     // 매 턴 체력을 되돌려 놓는다 — 표적이 죽으면 부활 대기로 빠져 사선에서 사라지고, 그때부터는
     // "쏘지 않은 턴"과 "쏠 대상이 없던 턴"이 구별되지 않는다. 재려는 건 발사 게이트뿐이다.
     const dealt: number[] = [];
-    for (let turn = 1; turn <= 6; turn++) {
+    // 주기(탄창 + 휴식)를 두 바퀴 돌린다 — 한 바퀴만 보면 "쉰 뒤에 다시 차는가"를 못 잰다.
+    const turns = (MAGAZINE + REST) * 2;
+    for (let turn = 1; turn <= turns; turn++) {
       target.currentHp = target.maxHp;
       resolveTurn(
         state,
@@ -128,7 +138,8 @@ describe('attack resolution', () => {
       dealt.push(target.maxHp - target.currentHp);
     }
 
-    expect(dealt.map((d) => d > 0)).toEqual([true, true, false, true, true, false]);
+    const cycle = [...Array(MAGAZINE).fill(true), ...Array(REST).fill(false)];
+    expect(dealt.map((d) => d > 0)).toEqual([...cycle, ...cycle]);
     // 쏜 턴들은 전부 같은 피해 — 쉬는 턴이 "빗나간 턴"이 아니라 진짜 발사 금지임을 못박는다.
     expect(new Set(dealt.filter((d) => d > 0)).size).toBe(1);
   });
@@ -215,7 +226,7 @@ describe('ammoState — 탄창식 기본 공격의 화면 표시용 단일 근�
   it('쏘기 전에는 탄창이 꽉 차 있다', () => {
     const state = emptyState();
     const d1 = addUnit(state, 'dealer1', 'p1', { x: 0, y: 0 });
-    expect(ammoState(d1)).toEqual({ magazine: 2, remaining: 2, restingTurns: 0 });
+    expect(ammoState(d1)).toEqual({ magazine: MAGAZINE, remaining: MAGAZINE, restingTurns: 0 });
   });
 
   it('한 발 쏘면 잔탄만 줄고 아직 쉬지 않는다', () => {
@@ -230,7 +241,7 @@ describe('ammoState — 탄창식 기본 공격의 화면 표시용 단일 근�
       rngFor('p1'),
     );
 
-    expect(ammoState(d1)).toEqual({ magazine: 2, remaining: 1, restingTurns: 0 });
+    expect(ammoState(d1)).toEqual({ magazine: MAGAZINE, remaining: MAGAZINE - 1, restingTurns: 0 });
   });
 
   it('탄창을 비우면 휴식에 들어가고 잔탄이 0이 된다', () => {
@@ -239,12 +250,13 @@ describe('ammoState — 탄창식 기본 공격의 화면 표시용 단일 근�
     addUnit(state, 'tank1', 'p2', { x: 3, y: 0 });
     const shoot = { baseAction: { kind: 'attack' as const, direction: 'right' as const } };
 
-    resolveTurn(state, plan('p1', 1, { [d1.instanceId]: shoot }), emptyPlan('p2', 1), rngFor('p1'));
-    resolveTurn(state, plan('p1', 2, { [d1.instanceId]: shoot }), emptyPlan('p2', 2), rngFor('p1'));
+    for (let turn = 1; turn <= MAGAZINE; turn++) {
+      resolveTurn(state, plan('p1', turn, { [d1.instanceId]: shoot }), emptyPlan('p2', turn), rngFor('p1'));
+    }
 
-    // 공격 단계에서 2로 걸렸다가 같은 턴 종료에 1로 깎인 상태다 — 다음 턴 공격이 불법이므로
-    // 사람이 체감하는 대기도 정확히 1턴이다.
-    expect(ammoState(d1)).toEqual({ magazine: 2, remaining: 0, restingTurns: 1 });
+    // 공격 단계에서 REST+1로 걸렸다가 같은 턴 종료에 하나 깎인 상태다 — 다음 턴 공격이
+    // 불법이므로 사람이 체감하는 대기도 정확히 REST턴이다.
+    expect(ammoState(d1)).toEqual({ magazine: MAGAZINE, remaining: 0, restingTurns: REST });
   });
 });
 

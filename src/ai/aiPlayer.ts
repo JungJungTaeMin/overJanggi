@@ -610,6 +610,64 @@ function generateCandidates(state: GameState, unit: UnitInstance, profile: Diffi
     }
   }
 
+  /**
+   * dealer4 자리 교체: 대각선 3칸 안의 아군 하나와 **서로** 자리를 맞바꾼다.
+   *
+   * 이 블록이 없던 동안 AI는 이 기술을 한 번도 계획하지 않았다. 기물 데이터·엔진·도움말에는
+   * 있는데 판에서는 일어나지 않는 기술이었다는 뜻이고, 밸런스 수치도 그만큼 **기술이 없는 셈
+   * 친** 값이었다(PROGRESS.md의 알려진 이슈).
+   *
+   * 값어치를 어떻게 매기나. 자리 교체는 **두 기물이 동시에 움직이는** 유일한 수라 한쪽만 보면
+   * 반쪽짜리 판단이 되고, 더 고약하게는 **자리를 바꾼 뒤의 판**에서 봐야 한다. 그냥 지금 판으로
+   * 재면 이 기술의 제일 좋은 쓰임이 통째로 사라지기 때문이다 — 점령지에 선 딜러가 탱커를
+   * 대신 들여보내는 수를 보자. 지금 판에서 탱커에게 "네가 점령지 칸에 서면?"이라고 물으면,
+   * **딜러가 아직 그 칸에 서 있으므로** 점령 인원이 이미 찼다고 보고(`surplus`) 값을 0.35배로
+   * 깎는다. 실제로는 그 딜러가 나가는 수인데도. 그래서 위치를 미리 맞바꾼 판을 만들어 두고 잰다.
+   *
+   * 그리고 **두 쪽을 같은 저울에 올린다.** 전송(support5_recall)은 남을 옮기는 값을 0.8로 깎지만
+   * 저쪽에서 깎이는 것은 **이득**이라 그게 보수적인 쪽이고, 여기서 아군 차액은 대개 **손해**다
+   * (앞에 선 아군과 바꾸면 그 아군은 뒤로 물러난다). 같은 0.8을 쓰면 손해만 4/5로 줄어 교체가
+   * 늘 남는 장사처럼 보이고, dealer4가 매 턴 아군을 뒤로 밀며 혼자 앞으로 뛴다. 제로섬인 수는
+   * 제로섬으로 재야 한다.
+   *
+   * **이동·공격을 얹은 후보는 내지 않는다.** 교체는 이동 단계 맨 앞이라 같은 턴에 걷거나 쏘는
+   * 것 자체는 합법이지만, 그 후보들의 방향·칸수는 전부 **교체 전 위치**를 기준으로 만들어져 있다.
+   * 얹는 순간 AI는 자기가 점수를 매긴 칸과 다른 칸에서 끝나는 수를 두게 된다(밀치기 주석과 같은
+   * 함정인데, 저쪽은 적이 조금 밀리는 정도이고 이쪽은 **시전자 본인이 통째로 순간이동한다**).
+   */
+  if (unit.typeId === 'dealer4' && skillReady('dealer4_swap')) {
+    const swapSkill = typeDef.skills.find((s) => s.id === 'dealer4_swap')!;
+    for (const ally of allies) {
+      if (ally.instanceId === unit.instanceId || ally.isTurret || !ally.position) continue;
+      if (!reaches(here, ally, swapSkill, state.board)) continue;
+      const dest = ally.position;
+      const swapped: GameState = {
+        ...state,
+        units: state.units.map((u) =>
+          u.instanceId === unit.instanceId
+            ? { ...u, position: dest }
+            : u.instanceId === ally.instanceId
+              ? { ...u, position: here }
+              : u,
+        ),
+      };
+      /**
+       * `push`는 도착 칸 값을 **자기가 한 번 더** 더한다(`positionValue(state, unit, dest)`).
+       * 여기서 그 몫을 그대로 빼 두면, 최종 점수는 교체 후 판으로 잰 양쪽 값의 합이 된다 —
+       * 빼지 않으면 딜러 쪽 위치 값이 두 번 세어져 교체가 늘 과대평가된다.
+       */
+      const bonus =
+        positionValue(swapped, unit, dest, profile) -
+        positionValue(state, unit, dest, profile) +
+        (positionValue(swapped, ally, here, profile) - positionValue(state, ally, dest, profile));
+      push(
+        { baseAction: { kind: 'none' }, skillUse: { skillId: 'dealer4_swap', target: ally.instanceId } },
+        dest,
+        bonus,
+      );
+    }
+  }
+
   // dealer3 공격 모드 토글: 켜야 쏠 수 있고, 켠 동안은 못 움직인다 — 사거리 안에 적이 들어왔을 때만 켠다.
   if (unit.typeId === 'dealer3') {
     const toggle = { skillId: 'dealer3_attack_mode' };
