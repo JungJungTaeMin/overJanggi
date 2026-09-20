@@ -49,10 +49,17 @@ export function attackRangeLabel(typeDef: UnitTypeDef): string {
     return `직선 ${shape.range}칸 · 대각선 ${shape.diagonalRange}칸`;
   }
   const axis = AXIS_LABEL[shape.axis ?? 'orthogonal'];
+  /**
+   * 관통(dealer5)은 **사거리 숫자만 봐서는 절대 알 수 없는** 성질이다. 이 기물은 기술도
+   * 패시브도 없어서 도움말이 "기술 없음 — 기본 공격이 전부다"라고만 적는데, 그 기본 공격이
+   * 사선 위의 적을 전부 때린다는 것이 이 기물의 전부다. 여기서 안 적으면 그 사실이 화면
+   * 어디에도 없다.
+   */
+  const pierce = shape.pierce ? '(관통)' : '';
   // 사거리도 동전으로 갈릴 수 있다(support3) — 이동력 라벨과 같은 형식으로 드러낸다.
   const heads = coinAttackRange(typeDef);
-  if (heads !== null && heads !== shape.range) return `${axis} ${shape.range} 또는 ${heads}칸(동전)`;
-  return `${axis} ${shape.range}칸`;
+  if (heads !== null && heads !== shape.range) return `${axis} ${shape.range} 또는 ${heads}칸(동전)${pierce}`;
+  return `${axis} ${shape.range}칸${pierce}`;
 }
 
 /**
@@ -72,8 +79,18 @@ export function attackPowerLabel(typeDef: UnitTypeDef): string {
   return String(typeDef.attack);
 }
 
+/** 가속 패시브(러너)의 최소~최대 이동 Lv. 그런 패시브가 없으면 null. */
+export function paceMoveRange(typeDef: UnitTypeDef): { min: number; max: number } | null {
+  const payload = typeDef.passive?.payload;
+  if (!payload || typeof payload.maxMove !== 'number') return null;
+  return { min: payload.minMove ?? typeDef.moveSpeed, max: payload.maxMove };
+}
+
 export function moveRangeLabel(typeDef: UnitTypeDef): string {
   const axis = typeDef.diagonalMove ? '직선·대각선' : '직선';
+  // 러너는 `moveSpeed` 하나로는 거짓말이 된다 — 표기가 1칸인데 실제로는 3칸까지 간다.
+  const pace = paceMoveRange(typeDef);
+  if (pace) return `${axis} ${pace.min}~${pace.max}칸(가속)`;
   const heads = coinMoveSpeed(typeDef);
   return heads !== null ? `${axis} ${typeDef.moveSpeed} 또는 ${heads}칸(동전)` : `${axis} ${typeDef.moveSpeed}칸`;
 }

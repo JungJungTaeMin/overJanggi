@@ -3,18 +3,75 @@ import { getUnitType } from '../data/unitTypes';
 import { hasActiveEffect, sumMagnitude } from './statusEffects';
 
 /**
- * 기물의 "이번 턴 실제 스탯". 지금은 support3(확률·포탑형)만 여기서 갈라진다 —
- * 매 턴 앞면/뒷면이 정해지고 그에 따라 이동력과 공격력이 통째로 바뀌기 때문에,
- * `unitTypes.moveSpeed` / `unitTypes.attack`을 그대로 읽으면 안 된다.
+ * **러너의 가속 패시브.** 이동 Lv이 최소~최대 사이를 오가는 기물의 눈금을 여기 한 곳에서만 읽는다.
+ *
+ * 상태이상(moveBonus)이 아니라 `charges`에 쌓는 이유가 둘 있다. 첫째, 상태이상의 "1턴 동안"은 적용
+ * 턴과 다음 턴까지만 살아 있어서(statusEffects.ts) **여러 턴에 걸쳐 쌓이는 값**을 담을 수 없다.
+ * 둘째, moveBonus로 주면 이 값이 기술 버프와 한 통에 섞여 "가속으로 3Lv인 상태"와 "1Lv인데 버프를
+ * 2 받은 상태"를 구별할 수 없게 되는데, 발맞추기가 **자기 이동 Lv만큼** 나눠 주는 기술이라 그 둘이
+ * 갈라져야 한다(가속분만 세고 남이 준 버프는 되팔지 않는다).
+ *
+ * 사망하면 charges가 initCharges로 초기화되므로(endOfTurn) 부활한 러너는 최소 Lv에서 다시 시작한다 —
+ * "사망 시 전부 초기화"라는 기존 판단값과 같다.
+ */
+const PACE_KEY = 'paceMomentum';
+
+function paceSpec(unit: UnitInstance): { min: number; max: number } | null {
+  const typeDef = getUnitType(unit.typeId);
+  const payload = typeDef.passive?.payload;
+  if (!payload || typeof payload.maxMove !== 'number') return null;
+  return { min: payload.minMove ?? typeDef.moveSpeed, max: payload.maxMove };
+}
+
+/** 가속 패시브를 가진 기물의 현재 눈금(화면 배지용). 없는 기물이면 null. */
+export function paceState(unit: UnitInstance): { level: number; min: number; max: number } | null {
+  const spec = paceSpec(unit);
+  return spec ? { level: paceLevel(unit), ...spec } : null;
+}
+
+/** 러너가 **이번 턴** 걷는 이동 Lv. 가속 패시브가 없는 기물은 기본 이동력 그대로. */
+export function paceLevel(unit: UnitInstance): number {
+  const spec = paceSpec(unit);
+  if (!spec) return getUnitType(unit.typeId).moveSpeed;
+  return Math.min(spec.max, spec.min + (unit.charges[PACE_KEY] ?? 0));
+}
+
+/**
+ * 걸은 턴의 정산 — 이동 단계에서 **실제로 한 칸이라도 움직인 뒤** 부른다.
+ *
+ * "최대 이동 Lv이 되면 다음 턴에 최소로 치환된다"를 그대로 옮긴 것이다: 최대치로 달린 그 턴이
+ * 끝나면 0으로 되돌아간다. 그래서 러너는 1 → 2 → 3 → 1을 도는 4턴 주기를 갖고, **최대 속도는
+ * 한 턴만** 쓴다. 제자리에 선 턴은 아무 일도 일어나지 않는다(가속도 감속도 없다) — 숨을 고르는
+ * 것이 곧 다음 가속을 미루는 선택이 되도록.
+ *
+ * 다음 턴 Lv을 돌려주는 이유는 로그와 화면이 "지금 몇 Lv이 됐는지"를 말할 수 있어야 해서다.
+ * 가속은 판에 아무 흔적도 남기지 않는 변화라, 로그가 없으면 사람은 이동 칸수가 왜 늘었는지 모른다.
+ */
+export function advancePace(unit: UnitInstance): { level: number; reset: boolean } | null {
+  const spec = paceSpec(unit);
+  if (!spec) return null;
+  const reset = paceLevel(unit) >= spec.max;
+  unit.charges[PACE_KEY] = reset ? 0 : (unit.charges[PACE_KEY] ?? 0) + 1;
+  return { level: paceLevel(unit), reset };
+}
+
+/**
+ * 기물의 "이번 턴 실제 스탯". support3(확률·포탑형)과 support4(러너)만 여기서 갈라진다 —
+ * 하나는 매 턴 동전으로 이동력·공격력이 통째로 바뀌고, 다른 하나는 걸은 턴마다 이동 Lv이 오른다.
+ * 어느 쪽이든 `unitTypes.moveSpeed` / `unitTypes.attack`을 그대로 읽으면 안 된다.
  *
  * **계획 시점과 해결 시점의 값이 다르다.** 동전은 해결 단계(이동 직전)에 굴러가므로 계획을 세울 때는
  * 결과를 알 수 없다. 그래서 계획·검증·UI·AI는 앞면 기준(최대치)으로 상한을 잡고, 실제 해결에서
  * 뒷면이 나오면 경로가 그만큼 잘린다. 반대로 하면(뒷면 기준) 앞면일 때 이동력을 못 쓰고,
  * 굴린 뒤 검증하면 계획 자체가 통째로 무효가 되어 "운이 나쁘면 아무것도 못 한다"가 된다.
+ *
+ * 러너의 가속에는 그런 갈라짐이 없다 — 이번 턴 Lv은 **지난 턴에 이미 확정된 값**이라 계획과 해결이
+ * 같은 숫자를 본다. 그래서 아래 세 함수가 러너에 대해서는 전부 같은 값을 돌려준다.
  */
 export function plannedMoveSpeed(unit: UnitInstance): number {
   const typeDef = getUnitType(unit.typeId);
   const payload = typeDef.passive?.payload;
+  if (paceSpec(unit)) return paceLevel(unit);
   if (unit.typeId !== 'support3' || !payload) return typeDef.moveSpeed;
   return Math.max(payload.headsMove ?? 0, payload.tailsMove ?? 0);
 }
@@ -29,6 +86,8 @@ export function plannedMoveSpeed(unit: UnitInstance): number {
 export function certainMoveSpeed(unit: UnitInstance): number {
   const typeDef = getUnitType(unit.typeId);
   const payload = typeDef.passive?.payload;
+  // 러너의 이번 턴 Lv은 운이 아니라 지난 턴의 결과라 상한과 하한이 같다 — 점선 칸이 생기지 않는다.
+  if (paceSpec(unit)) return paceLevel(unit);
   if (unit.typeId !== 'support3' || !payload) return typeDef.moveSpeed;
   return Math.min(payload.headsMove ?? typeDef.moveSpeed, payload.tailsMove ?? typeDef.moveSpeed);
 }
@@ -48,6 +107,7 @@ export function coinMoveSwing(unit: UnitInstance): number {
 export function resolvedMoveSpeed(unit: UnitInstance, turnNumber: number): number {
   const typeDef = getUnitType(unit.typeId);
   const payload = typeDef.passive?.payload;
+  if (paceSpec(unit)) return paceLevel(unit);
   if (unit.typeId !== 'support3' || !payload) return typeDef.moveSpeed;
   const heads = hasActiveEffect(unit, 'coinHeads', turnNumber);
   return (heads ? payload.headsMove : payload.tailsMove) ?? typeDef.moveSpeed;

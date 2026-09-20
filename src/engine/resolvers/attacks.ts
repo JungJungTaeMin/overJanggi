@@ -1,4 +1,4 @@
-import type { ActionPlan, Direction, GameState, Position, ResolutionEvent, UnitTurnPlan } from '../types';
+import type { ActionPlan, Direction, GameState, Position, ResolutionEvent, UnitInstance, UnitTurnPlan } from '../types';
 import { getUnitType } from '../../data/unitTypes';
 import { resolvedAttackPower, resolvedAttackShape } from '../unitStats';
 import { aim, type AimResult } from '../aim';
@@ -6,6 +6,19 @@ import { hasActiveEffect } from '../statusEffects';
 import { applyDamage } from '../damage';
 import { killUnit } from '../death';
 import { isSkillOnlyMove } from '../movePath';
+
+/**
+ * 이 기물이 `damage`를 맞았을 때 공격자에게 되돌리는 피해(tank6 반격형). 반격이 없으면 0이다.
+ *
+ * **AI도 같은 함수를 봐야 한다** — 여기 계산이 해결 단계에만 있으면 AI는 반격형을 그냥 체력 많은
+ * 탱커로 보고 계속 때리게 되고, 화면에서는 "왜 저걸 계속 치지?"로만 보이며 원인을 찾을 수 없다
+ * (밀치기의 `shovePath`를 공유하는 것과 같은 이유).
+ */
+export function reflectDamageOf(target: UnitInstance, damage: number): number {
+  const passive = getUnitType(target.typeId).passive;
+  if (passive?.id !== 'tank6_riposte') return 0;
+  return Math.floor((damage * (passive.payload?.reflectPercent ?? 0)) / 100);
+}
 
 /** 이번 턴 이 기물이 실제로 수행할 공격(= 기본 행동 공격). */
 type AttackIntent =
@@ -119,6 +132,58 @@ export function resolveAttacks(
       for (const target of result.targets) {
         applyDamage(target.unit, target.damage);
         landed = true;
+        /**
+         * **화상(dealer6)** — 명중한 뒤에도 계속 타는 피해. 실제로 닳는 것은 턴 종료(5단계)이고
+         * (resolvers/endOfTurn.ts) 여기서는 상태이상만 얹는다.
+         *
+         * 겹쳐 쌓지 않고 **다시 채운다**: 이미 붙어 있으면 걷어내고 새로 건다. 쌓게 두면 화염
+         * 사격형 둘을 넣은 편성이 "두 턴 스치면 무엇이든 지운다"가 되어, 한 방이 판 전체에서
+         * 가장 약하다는 이 기물의 대가가 사라진다.
+         */
+        const burn = typeDef.passive?.id === 'dealer6_burn' ? typeDef.passive : undefined;
+        if (burn && target.unit.alive) {
+          target.unit.statusEffects = target.unit.statusEffects.filter((e) => e.type !== 'burn');
+          target.unit.statusEffects.push({
+            type: 'burn',
+            appliedOnTurn: turnNumber,
+            /**
+             * 다른 상태이상은 addStatusEffect가 "1턴"(= +1)으로 고정하지만 화상은 지속시간이
+             * 데이터에 있다. 여기만 직접 미는 이유다.
+             *
+             * `-1`은 오타가 아니다. 화상은 **턴 종료마다 한 번씩 닳는** 효과라 "몇 턴 붙어
+             * 있는가"가 아니라 "몇 번 닳는가"로 세어야 맞다. 맞은 턴(N)의 종료가 이미 첫 번째
+             * 틱이므로 `N + duration`으로 두면 duration 2가 세 번 닳는다 — 데이터에 적힌
+             * "2턴 동안 턴마다 4"가 실제로는 12가 되어, 판에서 가장 약한 한 방(4)이라는
+             * 이 기물의 전제가 조용히 무너진다.
+             */
+            expiresAfterTurn: turnNumber + Math.max(1, burn.payload?.duration ?? 1) - 1,
+            magnitude: burn.payload?.damage ?? 0,
+            sourceId: unit.instanceId,
+          });
+          log.push({ phase: 'attack', type: 'burn', actorId: unit.instanceId, targetId: target.unit.instanceId });
+        }
+        /**
+         * **반격(tank6)** — 맞은 쪽이 때린 쪽에게 절반을 되돌린다.
+         *
+         * 되돌린 피해로는 **다시 반격하지 않는다.** 반격형끼리 마주 서면 무한 왕복이 되기 때문이고,
+         * 규칙으로도 그게 옳다 — 반격은 「공격을 맞은 것」에 대한 반응이지 반격을 맞은 것에 대한
+         * 반응이 아니다.
+         *
+         * 죽은 뒤에는 되돌리지 않는다. 3.6절("사망한 기물은 해당 턴의 이후 행동을 수행하지 않는다")과
+         * 같은 결이고, 그렇지 않으면 죽으면서 상대를 같이 죽이는 일이 생겨 우선순위가 무의미해진다.
+         */
+        const reflect = reflectDamageOf(target.unit, target.damage);
+        if (reflect > 0 && target.unit.currentHp > 0 && unit.alive) {
+          applyDamage(unit, reflect);
+          log.push({
+            phase: 'attack',
+            type: 'riposte',
+            actorId: target.unit.instanceId,
+            targetId: unit.instanceId,
+            detail: { damage: reflect },
+          });
+          if (unit.currentHp <= 0 && unit.alive) killUnit(unit, log);
+        }
         // 측면 교란(dealer4) 충족 여부를 남긴다 — 없으면 피해 숫자만 보고 보너스가 터졌는지
         // 되짚을 수 없다(버프까지 얹히면 더더욱). 수치와 조건은 flankBonus.ts 한 곳에만 있다.
         log.push({
@@ -135,6 +200,17 @@ export function resolveAttacks(
       // "다음엔 방벽부터 걷어내자"와 "다음엔 다른 칸을 노리자"가 갈린다.
       landed = true;
       log.push({ phase: 'attack', type: 'blockedByBarrier', actorId: unit.instanceId, targetId: result.blocker.instanceId });
+    } else if (result.kind === 'veil') {
+      // 방벽과 같은 이유로 "빗나감"과 구분한다. 다만 걷어낼 대상이 다르다 — 막은 칸을 지운 것은
+      // 그 칸에 선 기물이 아니라 **러너**이므로 targetId에 러너를 적는다.
+      landed = true;
+      log.push({
+        phase: 'attack',
+        type: 'blockedByVeil',
+        actorId: unit.instanceId,
+        targetId: result.blocker.instanceId,
+        detail: { at: result.at },
+      });
     }
 
     // 사거리 안에 아무도 없었다. 규칙상으로는 공격 행동이 정상 해결된 것이고(3.4절) 상태도 그대로라

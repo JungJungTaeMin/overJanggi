@@ -1,5 +1,6 @@
-import type { GameState, Owner } from './types';
+import type { GameState, Owner, UnitInstance } from './types';
 import { CAPTURE_MARGIN } from '../data/constants';
+import { getUnitType } from '../data/unitTypes';
 import { isInCaptureZone } from './grid';
 
 /** 점령지 안에 서 있는 팀별 기물 수(포탑 제외). */
@@ -39,12 +40,22 @@ export function captureWinner(counts: CaptureCounts): Owner | null {
   return counts[leader] >= needed ? leader : null;
 }
 
+/**
+ * 이 기물이 점령 인원으로 **몇 명**인가. 보통은 1이고, 러너만 2다(패시브1).
+ *
+ * 점수 계산과 AI의 위치 평가가 같은 함수를 봐야 한다 — AI가 러너를 1명으로 세면 점령지에 한 명
+ * 더 밀어 넣어야 한다고 판단해, 규칙상 이미 이긴 점령지에 기물을 계속 붓는다.
+ */
+export function captureWeightOf(unit: UnitInstance): number {
+  return getUnitType(unit.typeId).passive?.payload?.captureWeight ?? 1;
+}
+
 /** 지금 점령지에 서 있는 팀별 인원. 포탑은 편성 기물이 아니라 점령에 세지 않는다. */
 export function captureCounts(state: GameState): CaptureCounts {
   const counts: CaptureCounts = { p1: 0, p2: 0 };
   for (const unit of state.units) {
     if (!unit.alive || !unit.position || unit.isTurret) continue;
-    if (isInCaptureZone(unit.position, state.board)) counts[unit.owner] += 1;
+    if (isInCaptureZone(unit.position, state.board)) counts[unit.owner] += captureWeightOf(unit);
   }
   return counts;
 }

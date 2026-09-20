@@ -123,7 +123,13 @@ export function isActionLegal(state: GameState, unit: UnitInstance, plan: UnitTu
     if (spec) {
       const target = state.units.find((u) => u.instanceId === plan.skillUse!.target && u.alive);
       if (!target || !target.position) return false;
-      const from = plannedDestination(unit, plan, state.board);
+      /**
+       * 다만 **이동 단계의 기술은 이동보다 먼저** 해결된다(dealer4 자리교체, support4 발맞추기 —
+       * movement.ts 1)번 블록이 2)번 이동보다 앞에 있다). 그 기술들을 도착 칸으로 재면 계획 화면은
+       * 통과시키고 해결기는 사거리 밖이라 조용히 버리는, 화면과 결과가 갈라지는 종류의 어긋남이 된다.
+       */
+      const preMove = skill.effectCategory === 'movement';
+      const from = preMove ? unit.position : plannedDestination(unit, plan, state.board);
       if (!from || !isWithinSkillRange(from, target.position, spec.range, state.board, spec.axis)) return false;
     }
   }

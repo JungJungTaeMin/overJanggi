@@ -39,6 +39,13 @@ export interface AttackShape {
   diagonalRange?: number;
   aoeRadius?: number;
   aoeShape?: 'plus' | 'square' | 'line';
+  /**
+   * 직선 공격이 **첫 적에서 멈추지 않고** 사선 위의 적을 전부 때린다(dealer5 관통 사격형).
+   *
+   * 기본값(false)이 이 게임의 오래된 암묵 규칙이었다 — 앞에 하나 세워 두면 뒤가 안전하다.
+   * 아군·방벽·차단막은 관통해도 여전히 막는다(engine/aim.ts): 뚫는 것은 적의 몸이지 방어 수단이 아니다.
+   */
+  pierce?: boolean;
 }
 
 export interface SkillDef {

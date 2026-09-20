@@ -6,7 +6,7 @@ import { addStatusEffect, sumMagnitude } from '../statusEffects';
 import { killUnit } from '../death';
 import { applyDamage } from '../damage';
 import { isSkillOnlyMove, plannedChargeUses, resolveMovePath } from '../movePath';
-import { resolvedMoveSpeed } from '../unitStats';
+import { advancePace, paceLevel, resolvedMoveSpeed } from '../unitStats';
 import { canTargetWithSkill } from '../skillRange';
 
 interface MoveIntent {
@@ -111,6 +111,39 @@ export function resolveMovement(
           unit.cooldowns[skill.id] = 3;
           log.push({ phase: 'movement', type: 'swap', actorId: unit.instanceId, targetId: ally.instanceId });
         }
+      } else if (skill.id === 'support4_pace') {
+        /**
+         * 발맞추기: 아군에게 **지금 러너의 이동 Lv만큼** moveBonus를 건다. 이 단계가 이동 단계의
+         * 맨 앞이라 러너는 아직 이번 턴 가속을 얻지 않았다 — 즉 "1→2→3으로 달아오른 만큼만" 주고,
+         * 이번 턴 이동으로 오를 몫은 아직 반영되지 않는다. 계획 화면에서 본 숫자와 결과가 같아야
+         * 하므로(계획 시점엔 이번 턴 이동 결과를 알 수 없다) 이 시점이 유일하게 맞는 시점이다.
+         *
+         * 대상 사거리를 여기서 다시 보는 이유는 dealer4 자리교체와 같다 — 계획 시점 검사만으로는
+         * 부족할 수 있어서다. 다만 이 단계는 아무도 아직 움직이지 않은 턴 시작 배치이므로
+         * 실질적으로는 계획 검사와 같은 결과가 나온다.
+         *
+         * **받은 아군이 실제로 더 걷는 것은 다음 턴이다.** 이동은 계획 시점에 칸수를 찍어야 하는데,
+         * 그 시점에는 이 버프가 아직 없다(동시 턴이라 러너가 걸지 말지도 모른다). 이건 구현 한계가
+         * 아니라 동시 턴 게임에서 남이 주는 이동 버프가 가질 수 있는 유일한 형태다 — 상태이상이
+         * 이번 턴과 다음 턴을 덮으므로(statusEffects.ts) 아군은 다음 턴 계획에서 늘어난 칸을 쓴다.
+         * 그래서 이 기술은 "지금 도망쳐"가 아니라 "다음 턴에 크게 움직여"라는 신호가 된다.
+         */
+        const targetId = unitPlan.skillUse!.target as string | undefined;
+        const ally = state.units.find(
+          (u) => u.instanceId === targetId && u.alive && u.owner === unit.owner && u.instanceId !== unit.instanceId,
+        );
+        if (ally && canTargetWithSkill(unit, ally, skill, state.board)) {
+          const amount = paceLevel(unit);
+          addStatusEffect(ally, 'moveBonus', turnNumber, unit.instanceId, amount);
+          unit.cooldowns[skill.id] = 2;
+          log.push({
+            phase: 'movement',
+            type: 'skill',
+            actorId: unit.instanceId,
+            targetId: ally.instanceId,
+            detail: { skillId: skill.id, moveBonus: amount },
+          });
+        }
       }
     }
   }
@@ -179,6 +212,22 @@ export function resolveMovement(
       actorId: intent.unit.instanceId,
       detail: { to: current, cellsMoved: movedCells.length },
     });
+
+    /**
+     * 러너 가속(패시브2): **실제로 한 칸이라도 움직인 턴에만** Lv이 오른다. 계획만 세우고 벽에
+     * 막혀 못 간 턴은 오르지 않는다 — 그래야 "달릴수록 빨라진다"가 화면에서 본 움직임과 일치한다.
+     * 최고 Lv에 닿은 상태에서 또 달리면 이 자리에서 0으로 초기화되고, 그 결과는 다음 턴부터 보인다
+     * (이번 턴 이동 한계는 위 2)에서 이미 정해졌으므로 이번 턴에는 영향이 없다).
+     */
+    const pace = advancePace(intent.unit);
+    if (pace) {
+      log.push({
+        phase: 'movement',
+        type: 'pace',
+        actorId: intent.unit.instanceId,
+        detail: { level: pace.level, reset: pace.reset },
+      });
+    }
 
     /**
      * tank2 돌진(§7.1 "경로의 적에게 이동 칸수만큼 피해"): 밟고 지나간 적 전원에게 실제 이동 칸수만큼.

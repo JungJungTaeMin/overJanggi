@@ -26,6 +26,8 @@ import {
 } from '../engine/grid';
 import { attackRangeFor, frontBandCells, isWithinSkillRange, lineCells } from '../engine/targeting';
 import { skillRangeSpec } from '../engine/skillRange';
+import { captureWeightOf } from '../engine/capture';
+import { directionFrom, pullPath, recallCell, shovePath } from '../engine/resolvers/preAttack';
 import { hasActiveEffect, sumMagnitude } from '../engine/statusEffects';
 import { isActionLegal, sanitizePlan } from '../engine/validation';
 import { staticRunLimit } from '../engine/movePath';
@@ -245,7 +247,8 @@ function zoneCountsExcluding(state: GameState, self: UnitInstance): Record<Owner
   const counts: Record<Owner, number> = { p1: 0, p2: 0 };
   for (const u of state.units) {
     if (!u.alive || !u.position || u.isTurret || u.instanceId === self.instanceId) continue;
-    if (isInCaptureZone(u.position, state.board)) counts[u.owner] += 1;
+    // 인원은 1명이 아닐 수 있다(러너=2명). 1로 세면 이미 규칙상 이긴 점령지에 기물을 계속 붓는다.
+    if (isInCaptureZone(u.position, state.board)) counts[u.owner] += captureWeightOf(u);
   }
   return counts;
 }
@@ -273,7 +276,10 @@ function positionValue(state: GameState, unit: UnitInstance, dest: Position, pro
     const counts = zoneCountsExcluding(state, unit);
     const foes = counts[unit.owner === 'p1' ? 'p2' : 'p1'];
     const needed = foes === 0 ? 1 : foes + CAPTURE_MARGIN;
-    const surplus = counts[unit.owner] + 1 > needed;
+    // "나 없이도 이미 점수가 나는가". 무게 1짜리 기물에서는 예전 식(counts + 1 > needed)과 완전히
+    // 같은 값이지만, 러너처럼 **혼자 2명 몫**인 기물에서는 갈린다 — 예전 식은 빈 점령지에 처음
+    // 들어가는 러너(0 + 2 > 1)마저 잉여로 봐서, 정작 혼자 점수를 낼 수 있는 기물을 밖으로 돌렸다.
+    const surplus = counts[unit.owner] >= needed;
     score = 14 * profile.captureWeight * (surplus ? 0.35 : 1);
   } else {
     score = -distanceToCaptureZone(dest, board) * 0.9 * profile.captureWeight;
@@ -474,6 +480,114 @@ function generateCandidates(state: GameState, unit: UnitInstance, profile: Diffi
     }
   }
 
+  /**
+   * tank4 밀치기: 사거리 안의 적 하나를 나에게서 멀어지는 쪽으로 민다.
+   *
+   * 값어치를 **실제로 밀린 결과에서** 뽑는 게 핵심이다. 예전 tank3 구속이 사거리를 안 보고
+   * 후보를 고르다 맵 반대편 기물을 지정했던 것과 같은 실수를 여기서 반복하면, "적을 골랐는데
+   * 아무 일도 안 일어나는" 턴이 생긴다 — 그래서 엔진이 쓰는 `shovePath`를 그대로 불러 착지 칸을
+   * 미리 구하고, 그 칸을 기준으로 점수를 매긴다.
+   *
+   * 세 가지를 산다: (1) 점령지 밖으로 밀어내기 — 이 기물의 존재 이유이자 그 턴 점수를 직접
+   * 뒤집는 유일한 수, (2) 벽에 처박기 — 확정 피해, (3) 점령지에서 멀어진 칸 수. 한 칸도 안
+   * 밀리고 부딪히지도 않는 수는 아예 후보로 안 넣는다(쿨타임만 태우는 헛수고다).
+   */
+  if (unit.typeId === 'tank4' && skillReady('tank4_shove')) {
+    const shoveSkill = typeDef.skills.find((s) => s.id === 'tank4_shove')!;
+    const distance = shoveSkill.payload.distance ?? 1;
+    const wallDamage = shoveSkill.payload.wallDamage ?? 0;
+    const scored = enemies
+      .filter((e) => reaches(here, e, shoveSkill, state.board))
+      .map((enemy) => {
+        const dir = directionFrom(here, enemy.position!);
+        if (!dir) return null;
+        const path = shovePath(state, enemy.position!, dir, distance);
+        if (path.moved === 0 && !path.collided) return null;
+        const wasScoring = isInCaptureZone(enemy.position!, state.board);
+        const nowScoring = isInCaptureZone(path.to, state.board);
+        // 점령지 밖으로 빼내는 값은 크게 잡는다 — 피해 몇 점과 바꿀 수 없는, 점수판을 직접
+        // 건드리는 효과다. 반대로 **점령지 안으로 밀어 넣는 수는 자해**라 크게 깎는다.
+        const zone = wasScoring && !nowScoring ? 14 : !wasScoring && nowScoring ? -14 : 0;
+        const impact = path.collided ? damageValue(enemy, wallDamage, profile) : 0;
+        const pushedAway =
+          distanceToCaptureZone(path.to, state.board) - distanceToCaptureZone(enemy.position!, state.board);
+        return { enemy, value: zone + impact + pushedAway };
+      })
+      .filter((c): c is { enemy: UnitInstance; value: number } => c !== null && c.value > 0);
+
+    const best = pickBy(scored, (c) => c.value);
+    if (best) {
+      const shove = { skillId: 'tank4_shove', target: best.enemy.instanceId };
+      push({ baseAction: { kind: 'none' }, skillUse: shove }, here, best.value);
+      // 밀치기는 2단계라 공격(3단계)과 같은 턴에 둘 다 된다. 다만 민 뒤의 위치는 공격 방향
+      // 후보를 만든 시점과 다를 수 있어, 여기서 고른 방향이 빗나갈 수 있다 — 그래도 붙여 둔다.
+      // 안 붙이면 밀치기를 쓰는 턴마다 이 기물이 반드시 공격을 포기하게 된다.
+      if (attackable) {
+        for (const dir of attackDirections(unit)) {
+          push({ baseAction: { kind: 'attack', direction: dir }, skillUse: shove }, here, best.value);
+        }
+      }
+    }
+  }
+
+  /**
+   * tank5 갈고리: 사거리 안의 적 하나를 **나에게로** 끌어온다. 밀치기의 거울상이라 값어치도
+   * 거울상으로 매긴다 — 다만 두 기술이 사는 이유는 정반대다.
+   *
+   * 밀치기가 사는 것은 "점령지 밖으로 빼내기"고, 갈고리가 사는 것은 **"뒤에 숨은 것을 앞으로
+   * 끌어내기"**다. 그래서 점수의 중심에 둔 것도 다르다: 끌어온 뒤 그 적이 **우리 화력의 사거리
+   * 안에 들어오는가**를 본다. 여기를 그냥 "가까워졌다"로 두면 갈고리가 체력 16짜리 탱커를
+   * 우리 진영 한복판으로 초대하는 자해 기술이 된다 — 실제로 값이 큰 것은 체력이 낮고 화력이
+   * 높은 뒷줄을 끌어냈을 때뿐이다.
+   *
+   * 밀치기와 마찬가지로 엔진이 쓰는 `pullPath`를 그대로 불러 착지 칸을 먼저 구한다. 한 칸도
+   * 안 끌려오는 수는 후보로 내지 않는다(쿨타임 3턴을 헛되이 태우는 짓이다).
+   */
+  if (unit.typeId === 'tank5' && skillReady('tank5_hook')) {
+    const hookSkill = typeDef.skills.find((s) => s.id === 'tank5_hook')!;
+    const distance = hookSkill.payload.distance ?? 1;
+    const scored = enemies
+      .filter((e) => reaches(here, e, hookSkill, state.board))
+      .map((enemy) => {
+        const dir = directionFrom(enemy.position!, here);
+        if (!dir) return null;
+        const path = pullPath(state, enemy.position!, dir, distance, here);
+        if (path.moved === 0) return null;
+        const wasScoring = isInCaptureZone(enemy.position!, state.board);
+        const nowScoring = isInCaptureZone(path.to, state.board);
+        // 점령지 밖으로 뽑아내면 그 턴 점수판이 직접 바뀐다. 반대로 점령지 안으로 끌어들이는
+        // 수는 상대에게 점수를 상납하는 것이라 같은 크기로 깎는다(tank4와 같은 저울).
+        const zone = wasScoring && !nowScoring ? 14 : !wasScoring && nowScoring ? -14 : 0;
+        /**
+         * 끌어온 자리가 **우리 편 누군가의 사거리 안**인지. 갈고리 자체는 피해가 0이므로,
+         * 이 항이 0이면 이 기술은 그냥 적을 우리 쪽으로 옮겨 준 것에 지나지 않는다.
+         */
+        const exposed = allies.some(
+          (a) =>
+            a.instanceId !== unit.instanceId &&
+            getUnitType(a.typeId).canAttack &&
+            chebyshev(a.position!, path.to) <= attackRangeFor(plannedAttackShape(a), 'up'),
+        );
+        // 물러 터진 것을 끌어낼수록 값이 크다 — 체력이 낮을수록, 화력이 높을수록.
+        const softness = (plannedAttackPower(enemy, turn) + 4) / Math.max(1, enemy.currentHp);
+        return { enemy, value: zone + (exposed ? 8 * softness : 0) + path.moved * 0.5 };
+      })
+      .filter((c): c is { enemy: UnitInstance; value: number } => c !== null && c.value > 0);
+
+    const best = pickBy(scored, (c) => c.value);
+    if (best) {
+      const hook = { skillId: 'tank5_hook', target: best.enemy.instanceId };
+      push({ baseAction: { kind: 'none' }, skillUse: hook }, here, best.value);
+      // 갈고리는 2단계라 공격(3단계)과 같은 턴에 둘 다 된다. 끌어온 뒤의 위치는 여기서 고른
+      // 방향과 어긋날 수 있지만 그래도 붙인다 — 안 붙이면 갈고리를 쓰는 턴마다 공격을 포기한다.
+      if (attackable) {
+        for (const dir of attackDirections(unit)) {
+          push({ baseAction: { kind: 'attack', direction: dir }, skillUse: hook }, here, best.value);
+        }
+      }
+    }
+  }
+
   // dealer2 추가 이동: 충전 1개 = 이동 한 번 더. **충전을 0으로 만들면 첫 사용 지점으로 되감기**되므로
   // 마지막 한 개는 남겨 둔다(되감기를 전술로 쓰는 건 사람 몫).
   if (unit.typeId === 'dealer2' && !rooted && (unit.charges['dealer2_rewind_move'] ?? 0) >= 2) {
@@ -638,6 +752,144 @@ function generateCandidates(state: GameState, unit: UnitInstance, profile: Diffi
         cells.forEach((dest, i) => {
           if (canPlaceAt(dest)) push({ baseAction: moveAction(dir, i + 1), skillUse: turret }, dest, 6);
         });
+      }
+    }
+  }
+
+  /**
+   * support4 러너: 차단막(주변 8칸의 공격·회복을 지움) / 발맞추기(옆 아군 이동력 +러너의 이동 Lv).
+   *
+   * 차단막은 **덮은 칸에 선 아군이 이번 턴 얼마나 맞을 뻔했는가**가 곧 값어치다 — 아무도 없는
+   * 허공에 치면 쿨타임 5턴을 버리는 것이다. 자기 칸은 덮이지 않으므로(veil.ts) 러너 본인의 위협은
+   * 세지 않는다. 차단막은 2단계(이동 뒤)에 걸리므로 도착 칸 기준으로 보는 것이 맞고, 그래서 이동과
+   * 함께 계획하는 후보까지 낸다.
+   */
+  if (unit.typeId === 'support4') {
+    if (skillReady('support4_veil')) {
+      const veilSkill = typeDef.skills.find((s) => s.id === 'support4_veil')!;
+      const radius = veilSkill.payload.radius ?? 1;
+      const veilWorth = (from: Position) => {
+        let worth = 0;
+        for (const ally of allies) {
+          if (ally.instanceId === unit.instanceId || !ally.position) continue;
+          if (chebyshev(from, ally.position) > radius) continue;
+          worth += Math.min(threatAt(state, ally, ally.position), 12) * 0.8;
+        }
+        return worth;
+      };
+      const veil = { skillId: 'support4_veil' };
+      push({ baseAction: { kind: 'none' }, skillUse: veil }, here, veilWorth(here));
+      for (const m of moveCandidates) push({ baseAction: m.action, skillUse: veil }, m.dest, veilWorth(m.dest));
+    }
+
+    /**
+     * 발맞추기는 값어치를 크게 잡지 않는다. 이동력 자체는 이 판에서 승패를 가르는 축이 아니고
+     * (측정: 사거리·회복량 조정은 승률을 거의 못 움직였다), 잘못 크게 잡으면 러너가 점령지로
+     * 걸어가는 대신 매 턴 아군 옆에 붙어 버프만 돌린다. 지금 이동 Lv이 높을수록만 값이 오른다.
+     */
+    if (skillReady('support4_pace')) {
+      const paceSkill = typeDef.skills.find((s) => s.id === 'support4_pace')!;
+      // 발맞추기는 이동보다 **먼저** 해결되므로 사거리 기준 칸은 도착 칸이 아니라 지금 선 칸이다
+      // (movement.ts 1)번 블록). 그래서 대상은 한 번만 고르고, 이동 후보에는 그대로 얹는다.
+      const target = pickBy(
+        allies.filter(
+          (a) =>
+            a.instanceId !== unit.instanceId &&
+            !hasActiveEffect(a, 'root', turn) &&
+            reaches(here, a, paceSkill, state.board),
+        ),
+        // 점령지에서 먼 아군일수록 이동 몇 칸의 값이 크다 — 이미 점령지에 선 기물은 갈 곳이 없다.
+        (a) => distanceToCaptureZone(a.position!, state.board) * roleValue(a),
+      );
+      if (target) {
+        const pace = { skillId: 'support4_pace', target: target.instanceId };
+        const worth = plannedMoveSpeed(unit) * 0.8;
+        push({ baseAction: { kind: 'none' }, skillUse: pace }, here, worth);
+        for (const m of moveCandidates) push({ baseAction: m.action, skillUse: pace }, m.dest, worth);
+      }
+    }
+  }
+
+  /**
+   * support5 전송: 선이 맞은 아군 하나를 내 옆으로 부른다.
+   *
+   * 값어치의 축은 **이동력이 아니라 시간**이다. 이 판에서 가장 비싼 것은 부활한 기물이 시작
+   * 지점에서 점령지까지 걸어오는 서너 턴인데, 전송은 그 서너 턴을 한 번에 지운다. 그래서
+   * 점수를 "몇 칸 당겼나"가 아니라 **"점령지까지의 거리를 몇 칸 줄였나 × 그 기물의 값"**으로
+   * 잡는다. 이렇게 두면 이미 점령지에 선 아군을 부르는 수(줄어든 거리 0 이하)는 저절로
+   * 후보에서 빠진다 — 그걸 따로 막는 조건을 쓰지 않아도 되는 이유다.
+   *
+   * 착지 칸은 엔진과 같은 `recallCell`로 미리 구한다. 밀치기·갈고리에서와 같은 이유다:
+   * 점수를 매긴 칸과 실제로 도착하는 칸이 다르면 AI는 매번 자기가 계산하지 않은 수를 둔다.
+   */
+  if (unit.typeId === 'support5' && skillReady('support5_recall')) {
+    const recallSkill = typeDef.skills.find((s) => s.id === 'support5_recall')!;
+    const scored = allies
+      .filter((a) => a.instanceId !== unit.instanceId && !a.isTurret && reaches(here, a, recallSkill, state.board))
+      .map((ally) => {
+        const cell = recallCell(state, here, ally.position!);
+        if (!cell) return null;
+        const gained =
+          distanceToCaptureZone(ally.position!, state.board) - distanceToCaptureZone(cell, state.board);
+        if (gained <= 0) return null;
+        // 부른 자리가 위험하면 그만큼 깎는다 — 뒷줄 딜러를 최전선 한복판으로 소환하면
+        // 아낀 세 턴을 그 딜러의 목숨으로 갚게 된다.
+        const risk = Math.min(threatAt(state, ally, cell), 12) * 0.5;
+        return { ally, value: gained * roleValue(ally) * 0.8 - risk };
+      })
+      .filter((c): c is { ally: UnitInstance; value: number } => c !== null && c.value > 0);
+
+    const best = pickBy(scored, (c) => c.value);
+    if (best) {
+      const recall = { skillId: 'support5_recall', target: best.ally.instanceId };
+      push({ baseAction: { kind: 'none' }, skillUse: recall }, here, best.value);
+      if (attackable) {
+        for (const dir of attackDirections(unit)) {
+          push({ baseAction: { kind: 'attack', direction: dir }, skillUse: recall }, here, best.value);
+        }
+      }
+    }
+  }
+
+  /**
+   * support6 표식: 사거리 안의 적 하나에게 이번 턴 받는 피해 +N을 붙인다.
+   *
+   * 쿨타임이 없는 상시 기술이라 "쓸까 말까"가 아니라 **"누구에게"**만 고르면 된다. 그래서
+   * 값어치의 기준은 하나뿐이다: **이번 턴에 실제로 맞을 적인가.** 표식은 그 턴에만 유효하므로
+   * 아무도 때리지 않을 적에게 붙이면 그냥 버리는 것이다. 우리 편 중 누가 그 적을 사거리 안에
+   * 두고 있는지를 세고, 때릴 수 있는 아군이 하나도 없으면 후보로 내지 않는다.
+   *
+   * 때리는 아군이 여럿이면 값이 곱절로 오른다 — 표식이 「한 명에게 몰아친다」는 뜻이고,
+   * 회복량이 승률로 환산되지 않았던 것과 달리 **집중 사격은 기물을 실제로 지운다**.
+   */
+  if (unit.typeId === 'support6' && skillReady('support6_mark')) {
+    const markSkill = typeDef.skills.find((s) => s.id === 'support6_mark')!;
+    const bonus = markSkill.payload.bonusDamage ?? 0;
+    const scored = enemies
+      .filter((e) => reaches(here, e, markSkill, state.board))
+      .map((enemy) => {
+        const shooters = allies.filter(
+          (a) =>
+            a.instanceId !== unit.instanceId &&
+            getUnitType(a.typeId).canAttack &&
+            chebyshev(a.position!, enemy.position!) <= attackRangeFor(plannedAttackShape(a), 'up'),
+        ).length;
+        if (shooters === 0) return null;
+        // 표식이 붙어 이번 턴에 죽을 수 있는 적이면 값이 훨씬 크다 — 표식의 존재 이유가
+        // 「거의 죽은 것을 확실히 죽이는 것」이기 때문이다.
+        const lethal = enemy.currentHp + enemy.shieldHp <= bonus * shooters ? 10 : 0;
+        return { enemy, value: damageValue(enemy, bonus, profile) * shooters + lethal };
+      })
+      .filter((c): c is { enemy: UnitInstance; value: number } => c !== null && c.value > 0);
+
+    const best = pickBy(scored, (c) => c.value);
+    if (best) {
+      const mark = { skillId: 'support6_mark', target: best.enemy.instanceId };
+      push({ baseAction: { kind: 'none' }, skillUse: mark }, here, best.value);
+      if (attackable) {
+        for (const dir of attackDirections(unit)) {
+          push({ baseAction: { kind: 'attack', direction: dir }, skillUse: mark }, here, best.value);
+        }
       }
     }
   }

@@ -4,8 +4,10 @@ import { WIN_SCORE } from '../../data/constants';
 import { getUnitType, maxHpFor } from '../../data/unitTypes';
 import { captureCounts, captureWinner } from '../capture';
 import { initCharges } from '../createInitialState';
+import { applyDamage } from '../damage';
+import { killUnit } from '../death';
 import { inBounds, isObstacle, isOccupied, key, step } from '../grid';
-import { hasActiveEffect, isEffectActive, pruneExpiredEffects } from '../statusEffects';
+import { hasActiveEffect, isEffectActive, pruneExpiredEffects, sumMagnitude } from '../statusEffects';
 
 /** 부활 지점 탐색 순서: 좌→우→상→하(판단 필요 항목 재검토, 시작지점 인접 칸 탐색 순서 기본값) */
 const RESPAWN_SEARCH_ORDER = ['left', 'right', 'up', 'down'] as const;
@@ -125,6 +127,25 @@ function respawnUnits(state: GameState, units: UnitInstance[], rngFn: RngFn, log
 export function resolveEndOfTurn(state: GameState, rngFn: RngFn, log: ResolutionEvent[]): void {
   const turnNumber = state.turnNumber;
   const nextTurn = turnNumber + 1;
+
+  /**
+   * 0) 화상(dealer6) — 턴 종료마다 닳는 피해.
+   *
+   * **회복보다 먼저 닳는다.** 이건 취향이 아니라 판 전체의 순서와 같은 결이다: 이 게임의 다섯
+   * 단계는 공격(3) → 회복(4)이고, 화상은 공격이 남긴 것이므로 회복보다 앞에 와야 "맞은 뒤에
+   * 치료한다"는 같은 이야기가 된다. 뒤집으면 체력 4에 화상 4를 안은 기물이 자동재생 1 덕에
+   * 살아남는 일이 생기고, 그건 화상이 무엇을 뚫었는지 화면만 보고는 설명할 수 없는 결과다.
+   *
+   * 보호막을 먼저 갉는지는 applyDamage 한 곳에만 적혀 있다 — 여기서 따로 정하지 않는다.
+   */
+  for (const unit of state.units) {
+    if (!unit.alive) continue;
+    const burn = sumMagnitude(unit, 'burn', turnNumber);
+    if (burn <= 0) continue;
+    applyDamage(unit, burn);
+    log.push({ phase: 'endOfTurn', type: 'burnTick', actorId: unit.instanceId, detail: { damage: burn } });
+    if (unit.currentHp <= 0) killUnit(unit, log);
+  }
 
   // 1) support1: 턴 종료 자동회복(해당 턴에 힐을 사용했다면 2배)
   for (const unit of state.units) {

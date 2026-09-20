@@ -74,7 +74,9 @@ export function resolveTurn(
   resolveMovement(state, sanitizedP1, sanitizedP2, movementIds, log);
   mark('movement');
 
-  resolvePreAttack(state, sanitizedP1, sanitizedP2, log);
+  // 이동 순서를 그대로 넘긴다 — 이 단계에는 밀치기(강제 이동)가 섞여 있어 처리 순서가 결과를
+  // 바꾼다. 순서를 안 주면 P1 계획이 항상 먼저 처리되어 선입력 우선권이 생긴다(preAttack.ts 주석).
+  resolvePreAttack(state, sanitizedP1, sanitizedP2, log, movementIds);
   mark('preAttack');
 
   const attackOrder = computeTurnPriority(state.units, rngFn);

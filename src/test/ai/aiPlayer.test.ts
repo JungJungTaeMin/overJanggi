@@ -27,9 +27,11 @@ describe('AI — 계획의 합법성', () => {
   it('어떤 난이도에서든 엔진이 거부할 계획을 내지 않는다', () => {
     for (const difficulty of ['easy', 'normal', 'hard'] as const) {
       const state = emptyState();
-      // 이동/공격/기술 제약이 제각각인 기물들을 한 판에 모아 둔다.
-      for (const [i, typeId] of ['tank1', 'tank2', 'tank3', 'dealer1', 'dealer2', 'dealer3', 'dealer4', 'support1', 'support2', 'support3'].entries()) {
-        addUnit(state, typeId, 'p2', { x: i % 9, y: 7 });
+      // 이동/공격/기술 제약이 제각각인 기물들을 한 판에 모아 둔다. 목록을 손으로 적지 않고
+      // 데이터에서 뽑는 이유: 기물을 새로 넣으면 **그 기물만 이 그물에서 빠지는데**, 새 기물이야말로
+      // 불법 계획을 낼 확률이 가장 높다(폭 9 보드라 두 줄에 나눠 세운다).
+      for (const [i, t] of unitTypes.entries()) {
+        addUnit(state, t.id, 'p2', { x: i % 9, y: 7 - Math.floor(i / 9) });
       }
       addUnit(state, 'tank1', 'p1', { x: 4, y: 4 });
 
